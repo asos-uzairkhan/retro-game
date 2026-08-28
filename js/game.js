@@ -65,18 +65,29 @@ export async function lookupGame(code) {
 export async function joinGame(code, name, color) {
   const user = await signIn();
   state.uid = user.uid;
-  const res = await runTransaction(ref(db, `games/${code}/players`), (players) => {
-    players = players || {};
-    if (players[state.uid]) return players; // already joined — no-op commit
-    if (Object.keys(players).length >= 15) return undefined;
-    for (const p of Object.values(players)) {
-      if (p.name.trim().toLowerCase() === name.trim().toLowerCase()) return undefined;
-      if (p.color === color) return undefined;
+
+  // Security rules only grant write access at games/{code}/players/{uid} (each
+  // player owns their own node), not at the players collection as a whole — so
+  // uniqueness checks are done via a read here, then the transaction below only
+  // ever touches this player's own path.
+  const existingSnap = await get(ref(db, `games/${code}/players`));
+  const players = existingSnap.val() || {};
+  if (!players[state.uid]) {
+    if (Object.keys(players).length >= 15) {
+      throw new Error('Name or colour already taken (or the game is full) — try another.');
     }
-    players[state.uid] = {
+    for (const p of Object.values(players)) {
+      if (p.name.trim().toLowerCase() === name.trim().toLowerCase() || p.color === color) {
+        throw new Error('Name or colour already taken (or the game is full) — try another.');
+      }
+    }
+  }
+
+  const res = await runTransaction(ref(db, `games/${code}/players/${state.uid}`), (existing) => {
+    if (existing) return existing; // already joined — no-op commit
+    return {
       name, color, isAdmin: false, online: true, location: 'start',
     };
-    return players;
   });
   if (!res.committed) {
     throw new Error('Name or colour already taken (or the game is full) — try another.');
