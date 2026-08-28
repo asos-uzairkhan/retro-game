@@ -1,0 +1,68 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "games": {
+      "$code": {
+        ".read": "auth != null",
+        ".write": "auth != null && !data.exists() && newData.child('meta/adminUid').val() === auth.uid",
+
+        "meta": {
+          ".write": "auth != null && data.child('adminUid').val() === auth.uid",
+          "phase": {
+            ".write": "auth != null && (root.child('games/' + $code + '/meta/adminUid').val() === auth.uid || (data.val() === 'voting' && newData.val() === 'reveal'))",
+            ".validate": "newData.isString() && (newData.val() === 'joining' || newData.val() === 'gameplay' || newData.val() === 'reflection' || newData.val() === 'voting' || newData.val() === 'reveal' || newData.val() === 'end')"
+          },
+          "phaseStartedAt": {
+            ".write": "auth != null"
+          }
+        },
+
+        "secrets": {
+          ".write": "auth != null && root.child('games/' + $code + '/meta/adminUid').val() === auth.uid"
+        },
+
+        "players": {
+          "$uid": {
+            ".write": "auth != null && ($uid === auth.uid || root.child('games/' + $code + '/meta/adminUid').val() === auth.uid)",
+            "name": {
+              ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20"
+            }
+          }
+        },
+
+        "rooms": {
+          "$roomId": {
+            "occupantId": {
+              ".write": "auth != null && (!data.exists() || data.val() === auth.uid)"
+            },
+            "solved": {
+              ".write": "auth != null && data.val() !== true && root.child('games/' + $code + '/rooms/' + $roomId + '/occupantId').val() === auth.uid"
+            },
+            "solvedBy": {
+              ".write": "auth != null && root.child('games/' + $code + '/rooms/' + $roomId + '/occupantId').val() === auth.uid"
+            },
+            "answer": {
+              ".write": "auth != null && root.child('games/' + $code + '/rooms/' + $roomId + '/occupantId').val() === auth.uid",
+              ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 500"
+            }
+          }
+        },
+
+        "cluesFound": {
+          "$hintIndex": {
+            ".write": "auth != null && root.child('games/' + $code + '/players/' + auth.uid).exists()",
+            ".validate": "newData.isBoolean()"
+          }
+        },
+
+        "votes": {
+          "$uid": {
+            ".write": "auth != null && $uid === auth.uid && !data.exists() && root.child('games/' + $code + '/meta/phase').val() === 'voting' && root.child('games/' + $code + '/meta/adminUid').val() !== auth.uid",
+            ".validate": "newData.isNumber()"
+          }
+        }
+      }
+    }
+  }
+}

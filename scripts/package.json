@@ -1,0 +1,8 @@
+{
+  "name": "retro-game-scripts",
+  "private": true,
+  "description": "Maintenance scripts for the Data-Tech Among Us Retro game. Not part of the deployed static site.",
+  "dependencies": {
+    "firebase-admin": "^12.6.0"
+  }
+}

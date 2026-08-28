@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Data-Tech Among Us Retro</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛸</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="stars" aria-hidden="true"></div>
+
+<header id="hud" class="hidden">
+  <div class="hud-left">
+    <span class="logo-mini">🛸</span>
+    <span id="hud-code" class="hud-code" title="Game code"></span>
+    <span id="hud-phase" class="hud-phase"></span>
+  </div>
+  <div class="hud-right">
+    <span id="hud-rooms" class="hud-stat" title="Rooms solved"></span>
+    <span id="hud-clues" class="hud-stat" title="Clues found"></span>
+    <button id="btn-mute" class="btn-icon" title="Toggle sound">🔊</button>
+  </div>
+</header>
+
+<main id="app">
+
+  <!-- ========== Landing ========== -->
+  <section id="screen-landing" class="screen">
+    <div class="landing-card">
+      <div class="crew-row" id="landing-crew" aria-hidden="true"></div>
+      <h1 class="title">DATA-TECH<br><span>AMONG US RETRO</span></h1>
+      <p class="subtitle">A cooperative sprint retrospective&hellip; in space 🚀</p>
+      <div class="landing-buttons">
+        <button id="btn-create" class="btn btn-primary btn-big">Create Game</button>
+        <button id="btn-goto-join" class="btn btn-secondary btn-big">Join Game</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Setup (admin) ========== -->
+  <section id="screen-setup" class="screen hidden">
+    <div class="card card-wide">
+      <h2>🛠️ Game Setup</h2>
+      <form id="setup-form" novalidate>
+        <div class="form-grid">
+          <label class="field">Your name
+            <input id="setup-name" type="text" maxlength="20" placeholder="Captain name" autocomplete="off" required>
+          </label>
+          <div class="field"><span class="field-label">Your colour</span>
+            <div id="setup-colors" class="color-picker"></div>
+          </div>
+          <label class="field">Grid size
+            <select id="setup-grid">
+              <option value="5">5 × 5 (quick)</option>
+              <option value="7" selected>7 × 7 (standard)</option>
+              <option value="9">9 × 9 (epic)</option>
+            </select>
+          </label>
+          <label class="field">Vote timer
+            <select id="setup-timer">
+              <option value="60">1 minute</option>
+              <option value="120">2 minutes</option>
+              <option value="180" selected>3 minutes</option>
+              <option value="300">5 minutes</option>
+            </select>
+          </label>
+        </div>
+
+        <fieldset class="field">
+          <legend>Room types in play</legend>
+          <div id="setup-types" class="type-grid"></div>
+        </fieldset>
+
+        <div class="form-grid">
+          <label class="field">Suspects <small>(one per line, 3–12 fictional names)</small>
+            <textarea id="setup-suspects" rows="6" placeholder="Captain Redshirt&#10;Dr. Vents&#10;Ensign Snacks"></textarea>
+          </label>
+          <label class="field">Clues <small>(one per line, 1–20, hidden in rooms)</small>
+            <textarea id="setup-hints" rows="6" placeholder="The imposter drinks tea, not coffee&#10;The imposter was on leave during the incident"></textarea>
+          </label>
+        </div>
+
+        <label class="field">The imposter <small>(kept secret until the reveal!)</small>
+          <select id="setup-imposter"><option value="">— add suspects first —</option></select>
+        </label>
+
+        <p id="setup-error" class="form-error hidden"></p>
+        <div class="form-actions">
+          <button type="button" id="setup-back" class="btn btn-ghost">Back</button>
+          <button type="submit" class="btn btn-primary">Create Game 🚀</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <!-- ========== Join ========== -->
+  <section id="screen-join" class="screen hidden">
+    <div class="card">
+      <h2>🛰️ Join Game</h2>
+      <div id="join-step1">
+        <label class="field">Game code
+          <input id="join-code" type="text" maxlength="6" placeholder="ABC123" autocomplete="off" class="input-code">
+        </label>
+        <p id="join-error1" class="form-error hidden"></p>
+        <div class="form-actions">
+          <button type="button" id="join-back1" class="btn btn-ghost">Back</button>
+          <button type="button" id="btn-join-lookup" class="btn btn-primary">Find Game</button>
+        </div>
+      </div>
+      <div id="join-step2" class="hidden">
+        <label class="field">Your name
+          <input id="join-name" type="text" maxlength="20" placeholder="Crewmate name" autocomplete="off">
+        </label>
+        <div class="field"><span class="field-label">Your colour</span>
+          <div id="join-colors" class="color-picker"></div>
+        </div>
+        <p id="join-error2" class="form-error hidden"></p>
+        <div class="form-actions">
+          <button type="button" id="join-back2" class="btn btn-ghost">Back</button>
+          <button type="button" id="btn-join-go" class="btn btn-primary">Join Crew 🚀</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Lobby ========== -->
+  <section id="screen-lobby" class="screen hidden">
+    <div class="card card-wide lobby">
+      <h2>🧑‍🚀 Crew Lobby</h2>
+      <p class="lobby-share">Share this code with your crew:</p>
+      <div class="lobby-code-row">
+        <span id="lobby-code" class="lobby-code"></span>
+        <button id="btn-copy-code" class="btn btn-ghost" title="Copy code">📋 Copy</button>
+      </div>
+      <p id="lobby-count" class="lobby-count"></p>
+      <ul id="lobby-players" class="lobby-players"></ul>
+      <div id="lobby-admin" class="lobby-admin hidden">
+        <p class="muted">You are the host. Start when everyone is in (minimum 2 players).</p>
+        <button id="btn-start-game" class="btn btn-primary btn-big" disabled>Start Game ▶</button>
+      </div>
+      <p id="lobby-wait" class="muted">Waiting for the host to start the game&hellip;</p>
+    </div>
+  </section>
+
+  <!-- ========== Game board ========== -->
+  <section id="screen-game" class="screen hidden">
+    <div class="game-layout">
+      <div class="board-wrap">
+        <div id="all-solved-banner" class="banner banner-ok hidden">🎉 All rooms complete!</div>
+        <div id="board-grid" class="board-grid"></div>
+      </div>
+      <aside class="sidebar">
+        <h3>Crew</h3>
+        <ul id="game-players" class="side-players"></ul>
+        <div id="game-admin" class="side-admin hidden">
+          <button id="btn-end-gameplay" class="btn btn-danger">End Gameplay ⏹</button>
+        </div>
+      </aside>
+    </div>
+  </section>
+
+  <!-- ========== Reflection ========== -->
+  <section id="screen-reflection" class="screen hidden">
+    <div class="card card-wide">
+      <h2>🪞 Reflection</h2>
+      <p class="muted">Review the sprint together. <span id="reflection-hint"></span></p>
+      <div id="reflection-list" class="reflection-list"></div>
+      <div id="reflection-admin" class="form-actions hidden">
+        <button id="btn-start-voting" class="btn btn-primary btn-big">Start Voting 🗳️</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Voting ========== -->
+  <section id="screen-voting" class="screen hidden">
+    <div class="card card-wide">
+      <h2>🗳️ Who is the imposter?</h2>
+      <div class="vote-timer">
+        <div class="vote-timer-bar"><div id="vote-timer-fill"></div></div>
+        <span id="vote-timer-text"></span>
+      </div>
+      <div class="voting-layout">
+        <div class="voting-clues">
+          <h3>🔍 Discovered clues</h3>
+          <ul id="voting-clues-list"></ul>
+        </div>
+        <div id="voting-main" class="voting-main"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Reveal ========== -->
+  <section id="screen-reveal" class="screen hidden">
+    <div class="card card-wide reveal-card">
+      <h2>📣 The Reveal</h2>
+      <div id="reveal-tally" class="reveal-tally"></div>
+      <div id="reveal-imposter-panel" class="reveal-imposter"></div>
+      <div id="reveal-admin" class="form-actions hidden">
+        <button id="btn-end-game" class="btn btn-primary btn-big">End Game 🏁</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ========== Summary ========== -->
+  <section id="screen-summary" class="screen hidden">
+    <div class="card card-wide">
+      <h2>📜 Mission Summary</h2>
+      <div id="summary-content"></div>
+      <div class="form-actions">
+        <button id="btn-copy-md" class="btn btn-secondary">📋 Copy summary as Markdown</button>
+        <button id="btn-leave" class="btn btn-ghost">Back to home</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="modal-root"></div>
+<div id="toast-root"></div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>
