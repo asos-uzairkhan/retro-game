@@ -34,11 +34,15 @@ A team retrospective run as a cooperative, Among Us–inspired browser game. Pla
 - Controls phase transitions (advances phases manually).
 - **Cannot vote** in the voting phase (they know the imposter).
 - Can kick a player during the joining phase.
+- Can **disband the lobby** during the joining phase, deleting the game entirely (e.g. to join a different game instead).
+- Can **leave the game at any later phase**; host duties automatically transfer to another (preferably online) player, or the game is deleted if they were the last one left.
 
 ### 2.2 Player
 - Joins with the game code, a display name, and a colour.
 - Moves on the map, answers questions, collects clues.
 - Votes for a suspect during the voting phase.
+- Can **leave the lobby** during the joining phase, removing themselves so they can join a different game.
+- Can **join or leave at any phase** other than after the game has ended — useful for late arrivals or reconnecting after a disconnect. Rejoining with the same browser/device restores the player's existing identity and location; leaving mid-game releases any room they were occupying.
 
 ---
 
@@ -61,7 +65,7 @@ stateDiagram-v2
 | # | Phase | Who acts | Ends when |
 |---|---|---|---|
 | 1 | Setup | Admin configures the game | Admin submits config; game + code created |
-| 2 | Joining | Players join via code | Admin clicks **Start Game** (min. 2 players total) |
+| 2 | Joining | Players join via code | Admin clicks **Start Game** (host can start solo, or with a full crew) |
 | 3 | Gameplay | All players (incl. admin) play the map | Admin clicks **End Gameplay** |
 | 4 | Reflection | Team reviews all questions & answers together | Admin clicks **Start Voting** |
 | 5 | Voting | Players (not admin) vote for a suspect | All votes submitted **or** vote timer expires |
@@ -81,7 +85,7 @@ The admin fills in a single setup form:
 | Admin name | text | 1–20 chars | — |
 | Admin colour | colour picker (from palette, Section 12.2) | — | first free colour |
 | Grid size | select | 5×5, 7×7, or 9×9 (odd, square) | 7×7 |
-| Room types in play | multi-select of the 7 typed rooms (Section 6) | ≥ 1 selected | all 7 |
+| Room type mix | a percentage (0–100) per typed room (Section 6) | percentages sum to ≤ 100 | 10% each |
 | Suspect list | list of names | 3–12 fictional names, unique | — |
 | Imposter | select one suspect from the list | exactly 1 | — |
 | Hints/clues | list of free-text clues | 1–20 clues | — |
@@ -110,7 +114,7 @@ Validation: number of hints must be ≤ number of non-start rooms. The imposter 
 ### 5.2 Map generation (at setup)
 
 1. Create the N×N grid; mark the centre as Start.
-2. Shuffle the list of selected room types. Assign types round-robin to a random ~60% of the remaining cells; all unassigned cells become **Storage**. (Guarantees every selected type appears at least once when the grid has enough cells.)
+2. Shuffle the remaining cells. For each typed room, its configured percentage of the remaining cells (rounded via the largest-remainder method, so counts sum to no more than the total) is assigned that type; any cells left over default to **Storage** — the admin can also leave a type at 0% to exclude it entirely.
 3. For every non-Storage room, pick a random unused question from that type's pool (Section 7). Storage rooms get the generic Storage prompt.
 4. Distribute hints into randomly chosen distinct non-start rooms (Section 8).
 
@@ -119,6 +123,7 @@ Validation: number of hints must be ≤ number of non-start rooms. The imposter 
 - A room is **accessible** when it is orthogonally adjacent (up/down/left/right — no diagonals) to a solved room. The Start room counts as solved.
 - A room's **type is visible only when the room is accessible.** Inaccessible rooms render as locked/undiscovered cells.
 - Solved rooms are visibly marked and can no longer be entered.
+- Hovering an accessible or solved room shows its question in a tooltip, without claiming occupancy — so players can preview a question (or, for a solved room, just the question, never the answer) without blocking anyone else from entering.
 
 ### 5.4 Movement & occupancy
 
@@ -128,7 +133,8 @@ Validation: number of hints must be ≤ number of non-start rooms. The imposter 
     1. Client claims occupancy (transaction).
     2. Question preview modal opens showing the room type and question, with **Accept** / **Go Back**.
     3. **Go Back** releases occupancy (`occupantId = null`) and returns the player to their previous location; another player may now enter.
-    4. **Accept** locks the player into answering; the answer form opens.
+    4. **Accept** locks the player into answering; the answer form opens, which also offers **Go Back** (same release behaviour) in case the player changes their mind before submitting.
+- The question preview modal also lets the occupant **ping up to 3 other players**, flagging the tile with each pinged player's colour (visible to everyone) — useful when someone thinks a teammate is better suited to answer. Pings persist through **Go Back** (so the pinged player can come take the room) and are cleared once the room is solved.
 - On disconnect, `onDisconnect()` handlers release any room occupancy the player holds and mark them offline (Section 11).
 
 ---
@@ -187,6 +193,7 @@ The full pool is authored during implementation and reviewed by the team; it mus
 - All players (including the admin) move and answer per Sections 5–7.
 - Answers are **not** visible to other players during gameplay — only which rooms are solved and by whom.
 - HUD shows: game code, phase, player list with online status, rooms solved counter, clues found counter.
+- An optional background music player is available while exploring and answering questions: play/pause, a track-selection dropdown, and a volume control. Tracks are mp3 files placed in `music/` (listed in `music/manifest.json`); the displayed title is the file's name. The selected track loops automatically.
 - The admin has an **End Gameplay** button (with confirmation dialog). There is no automatic end; the admin decides when the retro timebox is up, even if rooms remain unsolved.
 
 ### 9.2 Reflection
@@ -266,6 +273,7 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
 /
 ├── index.html          # single page, screens toggled by JS
 ├── css/style.css
+├── music/               # mp3 tracks + manifest.json (filenames shown as titles)
 ├── js/
 │   ├── main.js         # entry, routing between screens
 │   ├── firebase.js     # init, auth, RTDB helpers
@@ -273,6 +281,7 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
 │   ├── map.js          # generation, rendering, accessibility logic
 │   ├── questions.js    # built-in question pools
 │   ├── voting.js       # voting, reveal, summary
+│   ├── music.js        # optional gameplay background music player
 │   └── ui.js           # modals, toasts, shared components
 └── firebase.rules.json # RTDB security rules (deployed separately)
 ```
@@ -373,7 +382,6 @@ Do **not** invest in obfuscation/encryption for v1.
 - Admin handover on disconnect
 - Automated stale-game cleanup
 - Mobile-phone-optimised layout (tablet+ only)
-- Sound effects / music
 - Multiple imposters, player-imposters, sabotage mechanics
 - Server-side secret protection (see 13.2)
 

@@ -144,8 +144,9 @@ function voteTick() {
   }
 
   const eligible = Object.keys(state.players || {}).filter((u) => u !== state.meta.adminUid);
-  const allVoted = eligible.length > 0
-    && eligible.every((u) => state.votes && state.votes[u] !== undefined);
+  // Solo host games have no eligible voters — don't make the host wait out the full timer.
+  const allVoted = eligible.length === 0
+    || eligible.every((u) => state.votes && state.votes[u] !== undefined);
   if (allVoted && !allVotedAt) allVotedAt = now();
   if (!allVoted) allVotedAt = null;
 

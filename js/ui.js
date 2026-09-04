@@ -34,10 +34,38 @@ export function toast(msg, type = 'info', duration = 3500) {
   }, duration);
 }
 
+/* ===== Hover tooltip (e.g. previewing a room's question without entering it) ===== */
+
+const TOOLTIP_MARGIN = 16;
+
+function positionTooltip(el, x, y) {
+  const maxLeft = window.innerWidth - el.offsetWidth - TOOLTIP_MARGIN;
+  const maxTop = window.innerHeight - el.offsetHeight - TOOLTIP_MARGIN;
+  el.style.left = `${Math.min(x + 16, Math.max(TOOLTIP_MARGIN, maxLeft))}px`;
+  el.style.top = `${Math.min(y + 16, Math.max(TOOLTIP_MARGIN, maxTop))}px`;
+}
+
+export function showTooltip(html, x, y) {
+  const el = document.getElementById('tile-tooltip');
+  el.innerHTML = html;
+  el.classList.remove('hidden');
+  positionTooltip(el, x, y);
+}
+
+export function moveTooltip(x, y) {
+  const el = document.getElementById('tile-tooltip');
+  if (!el.classList.contains('hidden')) positionTooltip(el, x, y);
+}
+
+export function hideTooltip() {
+  document.getElementById('tile-tooltip').classList.add('hidden');
+}
+
 let currentModal = null;
 
 export function openModal(html, { dismissable = true } = {}) {
   closeModal();
+  hideTooltip(); // never let a hover tooltip float above a modal
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `<div class="modal">${html}</div>`;

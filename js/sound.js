@@ -63,6 +63,7 @@ export const sfx = {
   clue() { [880, 1175, 1568, 2093].forEach((f, i) => tone(f, 0.22, { type: 'triangle', when: i * 0.07, gain: 0.1 })); },
   join() { tone(440, 0.14, { slideTo: 700, gain: 0.12 }); },
   leave() { tone(660, 0.18, { slideTo: 320, gain: 0.1 }); },
+  ping() { [700, 900, 700, 900].forEach((f, i) => tone(f, 0.1, { type: 'square', when: i * 0.1, gain: 0.09 })); },
   phase() { [392, 523, 659, 784].forEach((f, i) => tone(f, 0.22, { type: 'triangle', when: i * 0.11, gain: 0.13 })); },
   tick() { tone(1050, 0.05, { type: 'square', gain: 0.05 }); },
   vote() { tone(520, 0.1, { slideTo: 780, gain: 0.11 }); tone(780, 0.12, { when: 0.1, gain: 0.1 }); },

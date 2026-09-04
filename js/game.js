@@ -30,7 +30,7 @@ export async function createGame(cfg) {
   }
   if (!code) throw new Error('Could not generate a unique game code. Try again.');
 
-  const rooms = generateRooms(cfg.gridSize, cfg.types, cfg.hints.length);
+  const rooms = generateRooms(cfg.gridSize, cfg.typePercents, cfg.hints.length);
   const game = {
     meta: {
       createdAt: serverTimestamp(),
@@ -98,6 +98,43 @@ export async function kickPlayer(uid) {
   await remove(ref(db, `games/${state.code}/players/${uid}`));
 }
 
+// Admin disbands the whole lobby; a regular player just removes themselves.
+export async function leaveLobby(code, uid, admin) {
+  if (admin) {
+    await remove(ref(db, `games/${code}`));
+  } else {
+    await remove(ref(db, `games/${code}/players/${uid}`));
+  }
+}
+
+// Lets a player leave mid-game (e.g. after a disconnect) and rejoin later with the code.
+export async function leaveGame() {
+  const { code, uid } = state;
+  const admin = isAdmin();
+
+  // Free up any room this player currently occupies so it doesn't stay stuck.
+  const occupied = Object.entries(state.rooms || {}).find(([, r]) => r.occupantId === uid);
+  if (occupied) await set(ref(db, `games/${code}/rooms/${occupied[0]}/occupantId`), null);
+
+  if (!admin) {
+    await remove(ref(db, `games/${code}/players/${uid}`));
+    return;
+  }
+
+  // Admin leaving mid-game: hand off host duties, or disband if no one's left.
+  const others = Object.keys(state.players || {}).filter((u) => u !== uid);
+  const next = others.find((u) => state.players[u].online) || others[0];
+  if (!next) {
+    await remove(ref(db, `games/${code}`));
+    return;
+  }
+  await update(ref(db, `games/${code}`), {
+    'meta/adminUid': next,
+    [`players/${next}/isAdmin`]: true,
+    [`players/${uid}`]: null,
+  });
+}
+
 /* ===== Phase transitions (admin) ===== */
 
 export async function setPhase(phase) {
@@ -154,5 +191,6 @@ export function renderLobby() {
   const admin = isAdmin();
   document.getElementById('lobby-admin').classList.toggle('hidden', !admin);
   document.getElementById('lobby-wait').classList.toggle('hidden', admin);
-  document.getElementById('btn-start-game').disabled = players.length < 2;
+  document.getElementById('btn-start-game').disabled = players.length < 1;
+  document.getElementById('btn-leave-lobby').textContent = admin ? '🗑 Disband Lobby' : '↩ Leave Lobby';
 }

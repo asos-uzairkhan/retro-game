@@ -11,6 +11,7 @@ import {
   showScreen, toast, initStars, escapeHtml, closeModal, confirmDialog,
 } from './ui.js';
 import { sfx, toggleMute, isMuted } from './sound.js';
+import { initMusicPlayer, showMusicPlayer, hideMusicPlayer } from './music.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -45,16 +46,36 @@ function buildColorPicker(container, { taken = [], onPick }) {
 
 let getSetupColor = () => null;
 
+const DEFAULT_TYPE_PCT = 10; // 7 types × 10% ≈ 70%, remaining 30% defaults to Storage
+
+function updateTypeTotal() {
+  const inputs = [...$('setup-types').querySelectorAll('.type-pct-input')];
+  const total = inputs.reduce((sum, i) => sum + (Number(i.value) || 0), 0);
+  const el = $('setup-types-total');
+  el.textContent = `Total: ${total}% • Storage (default): ${Math.max(0, 100 - total)}%`;
+  el.classList.toggle('type-total-warn', total > 100);
+  return total;
+}
+
 function initSetupForm() {
   getSetupColor = buildColorPicker($('setup-colors'), {});
 
   const typeGrid = $('setup-types');
   typeGrid.innerHTML = PLAYABLE_TYPES.map((t) => `
-    <label class="type-check">
-      <input type="checkbox" value="${t}" checked>
-      ${ROOM_TYPES[t].icon} ${ROOM_TYPES[t].name}
+    <label class="type-pct">
+      <span class="type-pct-label">${ROOM_TYPES[t].icon} ${ROOM_TYPES[t].name}</span>
+      <span class="type-pct-input-wrap">
+        <input type="number" class="type-pct-input" data-type="${t}" min="0" max="100" step="1" value="${DEFAULT_TYPE_PCT}">%
+      </span>
       <small>${escapeHtml(ROOM_TYPES[t].category)}</small>
     </label>`).join('');
+  typeGrid.querySelectorAll('.type-pct-input').forEach((input) => {
+    input.addEventListener('input', () => {
+      input.value = Math.min(100, Math.max(0, Math.round(Number(input.value) || 0)));
+      updateTypeTotal();
+    });
+  });
+  updateTypeTotal();
 
   $('setup-suspects').addEventListener('input', () => {
     const suspects = parseLines($('setup-suspects').value);
@@ -89,14 +110,19 @@ async function onSetupSubmit(e) {
   const color = getSetupColor();
   const gridSize = Number($('setup-grid').value);
   const voteTimerSec = Number($('setup-timer').value);
-  const types = [...$('setup-types').querySelectorAll('input:checked')].map((i) => i.value);
+  const typePercents = {};
+  [...$('setup-types').querySelectorAll('.type-pct-input')].forEach((i) => {
+    const pct = Number(i.value) || 0;
+    if (pct > 0) typePercents[i.dataset.type] = pct;
+  });
+  const typeTotal = updateTypeTotal();
   const suspects = parseLines($('setup-suspects').value);
   const imposterIndex = Number($('setup-imposter').value);
   const hints = parseLines($('setup-hints').value);
 
   if (!name || name.length > 20) return setupError('Please enter a name (1–20 characters).');
   if (!color) return setupError('Please pick a colour.');
-  if (!types.length) return setupError('Select at least one room type.');
+  if (typeTotal > 100) return setupError('Room type percentages add up to more than 100%.');
   if (suspects.length < 3 || suspects.length > 12) return setupError('Enter 3–12 suspects (one per line).');
   if (new Set(suspects.map((s) => s.toLowerCase())).size !== suspects.length) return setupError('Suspect names must be unique.');
   if ($('setup-imposter').value === '' || Number.isNaN(imposterIndex) || !suspects[imposterIndex]) return setupError('Pick which suspect is the imposter.');
@@ -107,7 +133,7 @@ async function onSetupSubmit(e) {
   if (btn) btn.disabled = true;
   try {
     const code = await game.createGame({
-      name, color, gridSize, voteTimerSec, types, suspects, imposterIndex, hints,
+      name, color, gridSize, voteTimerSec, typePercents, suspects, imposterIndex, hints,
     });
     sfx.phase();
     attachGame(code);
@@ -161,7 +187,7 @@ async function onJoinLookup() {
       attachGame(code);
       return;
     }
-    if (g.meta.phase !== 'joining') return joinError(1, 'Game already in progress — no late joins.');
+    if (g.meta.phase === 'end') return joinError(1, 'This game has already ended.');
 
     joinCode = code;
     const taken = Object.values(g.players || {}).map((p) => p.color);
@@ -184,7 +210,7 @@ async function onJoinGo() {
   if (!color) return joinError(2, 'Pick a colour.');
 
   const g = await game.lookupGame(joinCode);
-  if (!g || g.meta.phase !== 'joining') return joinError(2, 'Game already in progress.');
+  if (!g || g.meta.phase === 'end') return joinError(2, 'This game has already ended.');
   const dupName = Object.values(g.players || {}).some(
     (p) => p.name.trim().toLowerCase() === name.toLowerCase(),
   );
@@ -235,11 +261,13 @@ function leaveToLanding(msg) {
   detachGame();
   localStorage.removeItem('retro_code');
   closeModal();
+  hideMusicPlayer();
   showScreen('landing');
   if (msg) toast(msg, 'warn');
 }
 
 function onData(key, val) {
+  if (key === 'rooms') checkNewPings(state.rooms, val);
   state[key] = val;
 
   if (key === 'meta') {
@@ -264,6 +292,19 @@ function onData(key, val) {
   render();
 }
 
+// Notifies this player when they're newly pinged to a room by a teammate.
+function checkNewPings(oldRooms, newRooms) {
+  if (!oldRooms || !newRooms || !state.uid) return;
+  for (const [id, room] of Object.entries(newRooms)) {
+    const wasPinged = !!oldRooms[id]?.pings?.[state.uid];
+    const isPinged = !!room.pings?.[state.uid];
+    if (isPinged && !wasPinged) {
+      sfx.ping();
+      toast(`📡 You were pinged to ${ROOM_TYPES[room.type]?.name || 'a room'}!`, 'info', 5000);
+    }
+  }
+}
+
 function onPhaseChange(oldPhase, newPhase) {
   if (oldPhase) sfx.phase();
 
@@ -282,6 +323,7 @@ function onPhaseChange(oldPhase, newPhase) {
 function render() {
   if (!state.meta || !state.code) return;
   renderHUD();
+  if (state.meta.phase !== 'gameplay') hideMusicPlayer();
   switch (state.meta.phase) {
     case 'joining':
       showScreen('lobby');
@@ -291,6 +333,7 @@ function render() {
       showScreen('game');
       map.renderBoard();
       renderSidebar();
+      showMusicPlayer();
       break;
     case 'reflection':
       showScreen('reflection');
@@ -322,6 +365,8 @@ function renderHUD() {
   const solved = rooms.filter((r) => r.solved).length;
   $('hud-rooms').textContent = `🚪 ${solved}/${rooms.length}`;
   $('hud-clues').textContent = `🔍 ${Object.keys(state.cluesFound || {}).length}/${state.meta.hintCount || 0}`;
+  // The lobby has its own dedicated leave/disband button, so hide this one there.
+  $('btn-leave-game').classList.toggle('hidden', state.meta.phase === 'joining');
 }
 
 function renderSidebar() {
@@ -367,7 +412,7 @@ function wireButtons() {
 
   $('btn-start-game').onclick = async () => {
     sfx.click();
-    if (Object.keys(state.players || {}).length < 2) return;
+    if (Object.keys(state.players || {}).length < 1) return;
     await game.setPhase('gameplay');
   };
 
@@ -404,6 +449,47 @@ function wireButtons() {
 
   $('btn-leave').onclick = () => { sfx.click(); leaveToLanding(null); };
 
+  $('btn-leave-lobby').onclick = async () => {
+    sfx.click();
+    const admin = isAdmin();
+    const ok = await confirmDialog(
+      admin ? 'Disband lobby?' : 'Leave lobby?',
+      admin
+        ? 'Everyone will be removed and the game code will stop working.'
+        : "You can rejoin later with the code if the lobby is still open.",
+      admin ? 'Disband' : 'Leave',
+    );
+    if (!ok) return;
+    const code = state.code;
+    const { uid } = state;
+    leaveToLanding(admin ? 'Lobby disbanded.' : 'You left the lobby.');
+    try {
+      await game.leaveLobby(code, uid, admin);
+    } catch (err) {
+      toast(`Leave may not have fully completed: ${escapeHtml(err.message)}`, 'warn');
+    }
+  };
+
+  $('btn-leave-game').onclick = async () => {
+    sfx.click();
+    const admin = isAdmin();
+    const ok = await confirmDialog(
+      'Leave game?',
+      admin
+        ? "Host duties will pass to another crew member (or the game will end if you're the last one). You can rejoin anytime with the code."
+        : 'You can rejoin anytime with the game code.',
+      'Leave',
+    );
+    if (!ok) return;
+    try {
+      await game.leaveGame();
+    } catch (err) {
+      toast(`Could not leave: ${escapeHtml(err.message)}`, 'error');
+      return;
+    }
+    leaveToLanding('You left the game.');
+  };
+
   const muteBtn = $('btn-mute');
   muteBtn.textContent = isMuted() ? '🔇' : '🔊';
   muteBtn.onclick = () => {
@@ -427,6 +513,7 @@ async function init() {
   initSetupForm();
   initJoinForm();
   wireButtons();
+  initMusicPlayer();
   showScreen('landing');
 
   try {

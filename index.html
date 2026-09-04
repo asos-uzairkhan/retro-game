@@ -22,9 +22,21 @@
   <div class="hud-right">
     <span id="hud-rooms" class="hud-stat" title="Rooms solved"></span>
     <span id="hud-clues" class="hud-stat" title="Clues found"></span>
+    <button id="btn-leave-game" class="btn-icon" title="Leave game">🚪</button>
     <button id="btn-mute" class="btn-icon" title="Toggle sound">🔊</button>
   </div>
 </header>
+
+<div id="music-player" class="music-player hidden">
+  <div class="music-row">
+    <button id="music-play" class="btn-icon" title="Play / pause music">▶</button>
+    <select id="music-select" class="music-select" title="Choose a track"></select>
+  </div>
+  <div class="music-row">
+    <span class="music-vol-icon">🔉</span>
+    <input id="music-volume" type="range" min="0" max="100" value="50" class="music-volume" title="Music volume">
+  </div>
+</div>
 
 <main id="app">
 
@@ -71,8 +83,9 @@
         </div>
 
         <fieldset class="field">
-          <legend>Room types in play</legend>
+          <legend>Room type mix <small>(% of non-start rooms; the rest defaults to Storage)</small></legend>
           <div id="setup-types" class="type-grid"></div>
+          <p id="setup-types-total" class="type-total"></p>
         </fieldset>
 
         <div class="form-grid">
@@ -139,10 +152,11 @@
       <p id="lobby-count" class="lobby-count"></p>
       <ul id="lobby-players" class="lobby-players"></ul>
       <div id="lobby-admin" class="lobby-admin hidden">
-        <p class="muted">You are the host. Start when everyone is in (minimum 2 players).</p>
+        <p class="muted">You are the host. Start when everyone is in — solo play works too.</p>
         <button id="btn-start-game" class="btn btn-primary btn-big" disabled>Start Game ▶</button>
       </div>
       <p id="lobby-wait" class="muted">Waiting for the host to start the game&hellip;</p>
+      <button id="btn-leave-lobby" class="btn btn-ghost">↩ Leave Lobby</button>
     </div>
   </section>
 
@@ -221,6 +235,7 @@
 
 <div id="modal-root"></div>
 <div id="toast-root"></div>
+<div id="tile-tooltip" class="tile-tooltip hidden"></div>
 
 <script type="module" src="js/main.js"></script>
 </body>
