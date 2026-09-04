@@ -104,7 +104,7 @@ export function renderBoard() {
   const miniCrew = (players) => players.map((p) => `<span class="mini-crew" style="--c:${COLORS[p.color] || '#888'}" title="${escapeHtml(p.name)}"><i></i><span>${escapeHtml(p.name)}</span></span>`).join('');
   const pingFlags = (room) => Object.keys(room.pings || {}).map((uid) => {
     const p = state.players?.[uid];
-    return `<span class="tile-ping" style="--c:${COLORS[p?.color] || '#888'}" title="Pinged: ${escapeHtml(p?.name || '?')}">🚩</span>`;
+    return `<span class="tile-ping" style="--c:${COLORS[p?.color] || '#888'}" title="Pinged: ${escapeHtml(p?.name || '?')}"></span>`;
   }).join('');
 
   let html = '';
@@ -223,18 +223,18 @@ function questionHeadHTML(room) {
 }
 
 function pingPickerHTML(room) {
-  const others = Object.entries(state.players || {}).filter(([uid]) => uid !== state.uid);
-  if (!others.length) return '';
+  const players = Object.entries(state.players || {});
+  if (!players.length) return '';
   const current = room.pings || {};
-  const rows = others.map(([uid, p]) => `
+  const rows = players.map(([uid, p]) => `
     <label class="ping-check">
       <input type="checkbox" value="${uid}" ${current[uid] ? 'checked' : ''}>
       <span class="crewmate" style="--c:${COLORS[p.color] || '#888'}"></span>
-      ${escapeHtml(p.name)}
+      ${uid === state.uid ? 'You' : escapeHtml(p.name)}
     </label>`).join('');
   return `
     <div class="ping-picker">
-      <p class="ping-picker-label">📡 Think someone else should take this one? Ping up to 3 teammates — it'll flag this tile with their colour.</p>
+      <p class="ping-picker-label">📡 Flag this tile for up to 3 people — ping yourself to say you've got it, or teammates to hand it off.</p>
       <div class="ping-list">${rows}</div>
       <button type="button" class="btn btn-secondary btn-sm" data-act="ping">Send Ping</button>
     </div>`;

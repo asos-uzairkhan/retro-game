@@ -505,7 +505,7 @@ fieldset.field legend { padding: 0 8px; }
   display: flex;
   gap: 2px;
 }
-.tile-ping { font-size: .8rem; color: var(--c); filter: drop-shadow(0 0 2px rgba(0,0,0,.6)); }
+.tile-ping { width: 10px; height: 10px; border-radius: 50%; background: var(--c); box-shadow: 0 0 2px rgba(0,0,0,.6); }
 .tile-crew {
   display: flex;
   flex-wrap: wrap;
