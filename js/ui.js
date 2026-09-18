@@ -3,7 +3,7 @@ import { COLORS } from './state.js';
 import { sfx } from './sound.js';
 
 const SCREENS = [
-  'landing', 'setup', 'join', 'lobby', 'game',
+  'landing', 'setup', 'join', 'hints', 'lobby', 'game',
   'reflection', 'voting', 'reveal', 'summary',
 ];
 
@@ -11,7 +11,7 @@ export function showScreen(name) {
   for (const s of SCREENS) {
     document.getElementById(`screen-${s}`).classList.toggle('hidden', s !== name);
   }
-  const hudHidden = ['landing', 'setup', 'join'].includes(name);
+  const hudHidden = ['landing', 'setup', 'join', 'hints'].includes(name);
   document.getElementById('hud').classList.toggle('hidden', hudHidden);
 }
 

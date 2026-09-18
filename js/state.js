@@ -10,9 +10,8 @@ export const state = {
   cluesFound: null,
   votes: null,
   // secrets, fetched lazily at the appropriate phase
-  suspects: null,
   hints: null,
-  imposterIndex: null,
+  imposterUid: null,
   // local-only
   serverOffset: 0,
   prevLocation: 'start',
@@ -38,7 +37,7 @@ export function resetGameState() {
   state.unsubscribers = [];
   Object.assign(state, {
     code: null, meta: null, players: null, rooms: null, cluesFound: null,
-    votes: null, suspects: null, hints: null, imposterIndex: null,
+    votes: null, hints: null, imposterUid: null,
     prevLocation: 'start', answeringRoom: null, joined: false,
   });
 }

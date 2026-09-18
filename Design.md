@@ -1,6 +1,6 @@
 # Data-Tech Among Us Retro — Design Document
 
-A team retrospective run as a cooperative, Among Us–inspired browser game. Players explore a spaceship grid map, answer retro questions to unlock rooms, collect hidden clues, and finally vote on which suspect is the "imposter".
+A team retrospective run as a cooperative, Among Us–inspired browser game. Players explore a spaceship grid map, answer retro questions to unlock rooms, collect hidden clues, and finally vote on which crewmate is the "imposter".
 
 ---
 
@@ -20,8 +20,8 @@ A team retrospective run as a cooperative, Among Us–inspired browser game. Pla
 
 - The game is an end-of-sprint retrospective. Rooms map to classic retro categories (what went well, what didn't, improvements, etc.).
 - Answering the question in a room "solves" it, unlocking adjacent rooms and possibly revealing a hidden clue.
-- The **imposter is not a player.** The admin defines a fictional *suspect list* during setup and secretly marks one suspect as the imposter. Clues found in rooms help the team deduce who it is.
-- The team works cooperatively during gameplay; the vote at the end is individual.
+- **The imposter is a real player**, randomly chosen (by the game, not the admin) the moment gameplay starts. Nobody is told who it is in advance — not even the host. Clues found in rooms are drawn from the imposter's own self-authored hints and help the team deduce who it is.
+- The team works cooperatively during gameplay; the vote at the end is individual, and **everyone plays and votes, including the host.**
 
 ---
 
@@ -30,17 +30,17 @@ A team retrospective run as a cooperative, Among Us–inspired browser game. Pla
 ### 2.1 Admin / Host
 - Creates the game and configures it (Section 4).
 - Receives the generated **game code** and shares it with players.
-- Is also a regular player: moves on the map and answers questions.
+- Is also a regular player: moves on the map, answers questions, and **votes in the voting phase like everyone else** (nobody, including the host, is told who the imposter is ahead of time).
 - Controls phase transitions (advances phases manually).
-- **Cannot vote** in the voting phase (they know the imposter).
 - Can kick a player during the joining phase.
 - Can **disband the lobby** during the joining phase, deleting the game entirely (e.g. to join a different game instead).
 - Can **leave the game at any later phase**; host duties automatically transfer to another (preferably online) player, or the game is deleted if they were the last one left.
 
 ### 2.2 Player
+- Before joining, writes at least the host-configured minimum number of hints about themself (Section 4a) — used only if they turn out to be the imposter.
 - Joins with the game code, a display name, and a colour.
 - Moves on the map, answers questions, collects clues.
-- Votes for a suspect during the voting phase.
+- Votes for who they think the imposter is during the voting phase.
 - Can **leave the lobby** during the joining phase, removing themselves so they can join a different game.
 - Can **join or leave at any phase** other than after the game has ended — useful for late arrivals or reconnecting after a disconnect. Rejoining with the same browser/device restores the player's existing identity and location; leaving mid-game releases any room they were occupying.
 
@@ -65,10 +65,10 @@ stateDiagram-v2
 | # | Phase | Who acts | Ends when |
 |---|---|---|---|
 | 1 | Setup | Admin configures the game | Admin submits config; game + code created |
-| 2 | Joining | Players join via code | Admin clicks **Start Game** (host can start solo, or with a full crew) |
+| 2 | Joining | Players submit self hints, then join via code | Admin clicks **Start Game** (host can start solo, or with a full crew) — this is also when the imposter is randomly picked |
 | 3 | Gameplay | All players (incl. admin) play the map | Admin clicks **End Gameplay** |
 | 4 | Reflection | Team reviews all questions & answers together | Admin clicks **Start Voting** |
-| 5 | Voting | Players (not admin) vote for a suspect | All votes submitted **or** vote timer expires |
+| 5 | Voting | Every player (incl. admin) votes for who they think the imposter is | All votes submitted **or** vote timer expires |
 | 6 | Reveal | Votes then imposter are revealed to everyone | Admin clicks **End Game** |
 | 7 | End | Everyone views game summary | — (game is read-only) |
 
@@ -86,20 +86,27 @@ The admin fills in a single setup form:
 | Admin colour | colour picker (from palette, Section 12.2) | — | first free colour |
 | Grid size | select | 5×5, 7×7, or 9×9 (odd, square) | 7×7 |
 | Room type mix | a percentage (0–100) per typed room (Section 6) | percentages sum to ≤ 100 | 10% each |
-| Suspect list | list of names | 3–12 fictional names, unique | — |
-| Imposter | select one suspect from the list | exactly 1 | — |
-| Hints/clues | list of free-text clues | 1–20 clues | — |
+| Minimum hints per player | number | 1–20 | 3 |
 | Vote timer | select | 1, 2, 3, or 5 minutes | 3 min |
+
+Before they land in the lobby, the admin (like every joining player, Section 4a) must also write their own minimum number of self-hints and accept them at the review step.
 
 On submit, the client:
 
 1. Signs in anonymously to Firebase.
 2. Generates a **6-character game code** (uppercase A–Z minus ambiguous chars `I O`, plus digits 2–9), retrying on collision.
-3. Generates the map (Section 5.2), assigns room types and questions (Section 7), and randomly distributes hints into distinct rooms (Section 8).
-4. Writes the full game object to RTDB under `/games/{code}` with `phase: "joining"`.
+3. Generates the map (Section 5.2) and assigns room types and questions (Section 7). Hints are not placed yet — the imposter (and therefore whose hints get scattered) isn't chosen until gameplay starts (Section 8).
+4. Writes the full game object to RTDB under `/games/{code}` with `phase: "joining"`, including the admin's own submitted hints on their player record.
 5. Adds the admin as the first player and shows the lobby with the code displayed prominently.
 
-Validation: number of hints must be ≤ number of non-start rooms. The imposter identity is written to a location that clients never render until the reveal phase (Section 13.2 covers trust level).
+### 4a. Pre-lobby hint collection (host and players alike)
+
+Before anyone — host or joining player — actually appears in the lobby, they go through a two-step flow:
+
+1. **Entry:** write at least the game's configured minimum number of hints about themself (free text, max 20 total). Rows can be added/removed, but never below the minimum.
+2. **Review:** see all their hints listed clearly, each as its own distinct numbered item, with **Accept** or **Go Back & Edit**. Accepting is what actually creates the game (host) or joins it (player); going back returns to the entry step with everything preserved.
+
+These hints are private to each player until (and unless) that player is picked as the imposter, at which point they're the pool of clues scattered across the map (Section 8). The imposter identity itself is written to a location that clients never render until the reveal phase (Section 13.2 covers trust level).
 
 ---
 
@@ -116,7 +123,8 @@ Validation: number of hints must be ≤ number of non-start rooms. The imposter 
 1. Create the N×N grid; mark the centre as Start.
 2. Shuffle the remaining cells. For each typed room, its configured percentage of the remaining cells (rounded via the largest-remainder method, so counts sum to no more than the total) is assigned that type; any cells left over default to **Storage** — the admin can also leave a type at 0% to exclude it entirely.
 3. For every non-Storage room, pick a random unused question from that type's pool (Section 7). Storage rooms get the generic Storage prompt.
-4. Distribute hints into randomly chosen distinct non-start rooms (Section 8).
+
+Hints are **not** placed at this stage — they're scattered once the imposter is chosen, when gameplay starts (Section 8).
 
 ### 5.3 Accessibility rules
 
@@ -178,11 +186,11 @@ The full pool is authored during implementation and reviewed by the team; it mus
 
 ## 8. Hints / Clues
 
-- The admin authors 1–20 free-text clues at setup (e.g. "The imposter was on leave during the incident", "The imposter drinks tea, not coffee").
-- Each clue is placed in a **distinct, randomly chosen non-start room** at map generation.
+- Every player writes their own hints about themself before joining the lobby (Section 4a) — at least the host-configured minimum, up to 20 (e.g. "I was on leave for part of this sprint", "I drink tea, not coffee").
+- When the admin starts gameplay, **one player is picked at random as the imposter** and their hints become this game's clue pool, each placed in a **distinct, randomly chosen non-start room**. Everyone else's hints are discarded and never shown.
 - A clue is **discovered** when its room is solved. The solving player sees a "You found a clue!" toast, but the clue text remains hidden.
 - During gameplay, the team sees only a counter: "Clues found: 3 / 8".
-- **All discovered clues are revealed to everyone at the start of the voting phase.** Clues in rooms that were never solved stay hidden forever (they appear greyed-out as "undiscovered" in the end summary).
+- **All discovered clues are revealed to everyone at the start of the voting phase** — as plain hint text, without saying whose hints they are. Clues in rooms that were never solved stay hidden forever (they appear greyed-out as "undiscovered" in the end summary). A sharp-eyed imposter may recognise their own hint text once it's revealed, same as the classic party-game trope — everyone else has to deduce it from context.
 
 ---
 
@@ -210,16 +218,15 @@ The full pool is authored during implementation and reviewed by the team; it mus
 
 ### 10.1 Voting
 
-- On entry, all discovered clue texts are revealed to every player.
-- Each non-admin player sees the suspect list and picks exactly one suspect. Votes are secret until reveal and cannot be changed after submission.
-- The admin does not vote; their screen shows voting progress ("4 / 6 votes in") and the countdown.
-- A **vote timer** (configured at setup) starts when the phase begins. The phase auto-advances to Reveal when **all eligible players have voted** or the **timer expires**, whichever is first. Players who didn't vote in time are recorded as "no vote". The timer is enforced by clients against the phase-start timestamp stored in RTDB; the admin client performs the actual phase write (with any online client as fallback if the admin disconnects).
+- On entry, all discovered clue texts are revealed to every player (without saying whose hints they were).
+- **Every player, including the admin, votes** — nobody was told who the imposter is ahead of time, so the host has no unfair advantage. Each player picks exactly one crewmate they suspect. Votes are secret until reveal and cannot be changed after submission.
+- A **vote timer** (configured at setup) starts when the phase begins. The phase auto-advances to Reveal when **all players have voted** or the **timer expires**, whichever is first. Players who didn't vote in time are recorded as "no vote". The timer is enforced by clients against the phase-start timestamp stored in RTDB; the admin client performs the actual phase write (with any online client as fallback if the admin disconnects).
 
 ### 10.2 Reveal
 
 Two-step reveal, both steps visible to all players simultaneously:
 
-1. **Votes revealed:** a tally per suspect, with each voter's name and colour shown next to their vote.
+1. **Votes revealed:** a tally per crewmate, with each voter's name and colour shown next to their vote.
 2. **Imposter revealed** (admin clicks "Reveal imposter", 3-second dramatic countdown animation): the imposter's name is displayed, plus a "The crew was right! / The imposter got away!" banner depending on whether the plurality vote matched. Ties count as the imposter getting away.
 
 ### 10.3 End / Summary
@@ -303,6 +310,8 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
         "phaseStartedAt": 1724800300000,
         "gridSize": 7,
         "voteTimerSec": 180,
+        "minHints": 3,                // host-configured minimum hints per player (1–20)
+        "hintCount": 5,                // number of hints scattered, set when gameplay starts
         "highlightedRoom": "r3_4"     // reflection-phase shared pointer, nullable
       },
       "players": {
@@ -311,7 +320,8 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
           "color": "cyan",
           "isAdmin": true,
           "online": true,
-          "location": "start"          // "start" | roomId
+          "location": "start",         // "start" | roomId
+          "hints": ["Hint about me 1", "Hint about me 2"]   // self-authored, min–20
         }
       },
       "rooms": {
@@ -325,14 +335,13 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
           "hintIndex": null            // index into secrets/hints, null = no hint; see 13.2
         }
       },
-      "secrets": {                     // never rendered before the appropriate phase
-        "suspects": ["Alice", "Bob", "Charlie"],
-        "imposterIndex": 1,
-        "hints": ["Clue text 1", "Clue text 2"]
+      "secrets": {                     // never rendered before the appropriate phase; written when gameplay starts
+        "imposterUid": "abc123",       // randomly chosen from players at gameplay start
+        "hints": ["Clue text 1", "Clue text 2"]   // copy of the imposter's own hints
       },
       "cluesFound": { "0": true, "2": true },   // hintIndex -> discovered
       "votes": {
-        "{uid}": 2                     // suspectIndex; absent = not voted
+        "{uid}": "def456"              // uid of the player voted for; absent = not voted
       }
     }
   }
@@ -343,7 +352,8 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
 
 This is a static app with no server code, so the imposter identity and hint texts live in RTDB and are technically readable by a player who opens dev tools. **Accepted for v1** — this is a friendly team game, not a security-sensitive product. Mitigations:
 
-- Clients never fetch `secrets/imposterIndex` until the reveal phase and never render hint texts until voting.
+- Clients never fetch `secrets/imposterUid` until the reveal phase and never render hint texts until voting.
+- A player's own `players/{uid}/hints` are naturally visible to that player as soon as they write them, but every other player's hints stay unread until (and unless) that player becomes the imposter and their hints are copied into `secrets/hints` at gameplay start.
 - RTDB security rules restrict writes (below) but reads of a joined game are open to its players.
 
 Do **not** invest in obfuscation/encryption for v1.
@@ -351,11 +361,11 @@ Do **not** invest in obfuscation/encryption for v1.
 ### 13.3 Security rules (requirements)
 
 - Only authenticated (anonymous) users can read/write.
-- `meta/phase` and `secrets` writable only by `adminUid`.
-- A player can write only their own `players/{uid}` node and their own `votes/{uid}` (and only during the voting phase, and only once).
+- `meta/phase`, `meta/minHints`/`hintCount`, `secrets`, and `rooms/*/hintIndex` writable only by `adminUid` (the admin assigns hints/imposter once, when starting gameplay).
+- A player can write only their own `players/{uid}` node (including their own `hints`) and their own `votes/{uid}` (and only during the voting phase, and only once — any player, including the admin, may vote).
 - `rooms/*/occupantId` claimable only when currently `null` (transaction) or by its current holder (release).
 - `rooms/*/answer`, `solved`, `solvedBy` writable only by the room's current occupant, only while `solved == false`.
-- Validate string lengths (name ≤ 20, answer ≤ 500) in rules.
+- Validate string lengths (name ≤ 20, hint ≤ 140, answer ≤ 500) in rules.
 
 ---
 
@@ -382,7 +392,7 @@ Do **not** invest in obfuscation/encryption for v1.
 - Admin handover on disconnect
 - Automated stale-game cleanup
 - Mobile-phone-optimised layout (tablet+ only)
-- Multiple imposters, player-imposters, sabotage mechanics
+- Multiple imposters, sabotage mechanics
 - Server-side secret protection (see 13.2)
 
 ---

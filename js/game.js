@@ -4,7 +4,7 @@ import {
   db, ref, get, set, update, remove, onValue,
   runTransaction, onDisconnect, serverTimestamp, signIn,
 } from './firebase.js';
-import { generateRooms } from './map.js';
+import { generateRooms, shuffle } from './map.js';
 import { escapeHtml, confirmDialog, toast } from './ui.js';
 import { sfx } from './sound.js';
 
@@ -30,7 +30,7 @@ export async function createGame(cfg) {
   }
   if (!code) throw new Error('Could not generate a unique game code. Try again.');
 
-  const rooms = generateRooms(cfg.gridSize, cfg.typePercents, cfg.hints.length);
+  const rooms = generateRooms(cfg.gridSize, cfg.typePercents);
   const game = {
     meta: {
       createdAt: serverTimestamp(),
@@ -39,19 +39,14 @@ export async function createGame(cfg) {
       phaseStartedAt: serverTimestamp(),
       gridSize: cfg.gridSize,
       voteTimerSec: cfg.voteTimerSec,
-      hintCount: cfg.hints.length,
+      minHints: cfg.minHints,
     },
     players: {
       [state.uid]: {
-        name: cfg.name, color: cfg.color, isAdmin: true, online: true, location: 'start',
+        name: cfg.name, color: cfg.color, isAdmin: true, online: true, location: 'start', hints: cfg.hints,
       },
     },
     rooms,
-    secrets: {
-      suspects: cfg.suspects,
-      imposterIndex: cfg.imposterIndex,
-      hints: cfg.hints,
-    },
   };
   await set(ref(db, `games/${code}`), game);
   return code;
@@ -62,7 +57,7 @@ export async function lookupGame(code) {
   return snap.exists() ? snap.val() : null;
 }
 
-export async function joinGame(code, name, color) {
+export async function joinGame(code, name, color, hints) {
   const user = await signIn();
   state.uid = user.uid;
 
@@ -86,7 +81,7 @@ export async function joinGame(code, name, color) {
   const res = await runTransaction(ref(db, `games/${code}/players/${state.uid}`), (existing) => {
     if (existing) return existing; // already joined — no-op commit
     return {
-      name, color, isAdmin: false, online: true, location: 'start',
+      name, color, isAdmin: false, online: true, location: 'start', hints,
     };
   });
   if (!res.committed) {
@@ -143,6 +138,35 @@ export async function setPhase(phase) {
     phaseStartedAt: serverTimestamp(),
     highlightedRoom: null,
   });
+}
+
+// Randomly picks a real player as the imposter and scatters their self-authored
+// hints into random non-start rooms, then advances to the gameplay phase.
+export async function startGameplay() {
+  const players = state.players || {};
+  const uids = Object.keys(players);
+  if (!uids.length) throw new Error('No players to choose an imposter from.');
+
+  const imposterUid = uids[Math.floor(Math.random() * uids.length)];
+  const hints = players[imposterUid]?.hints || [];
+
+  const eligibleRooms = Object.entries(state.rooms || {})
+    .filter(([, r]) => r.type !== 'start')
+    .map(([id]) => id);
+  const scattered = shuffle([...eligibleRooms]).slice(0, hints.length);
+
+  const updates = {
+    'meta/phase': 'gameplay',
+    'meta/phaseStartedAt': serverTimestamp(),
+    'meta/hintCount': scattered.length,
+    'secrets/imposterUid': imposterUid,
+    'secrets/hints': hints,
+  };
+  // Clear stale hintIndex values (e.g. if this ever ran before) then place the fresh ones.
+  eligibleRooms.forEach((id) => { updates[`rooms/${id}/hintIndex`] = null; });
+  scattered.forEach((id, i) => { updates[`rooms/${id}/hintIndex`] = i; });
+
+  await update(ref(db, `games/${state.code}`), updates);
 }
 
 /* ===== Presence ===== */

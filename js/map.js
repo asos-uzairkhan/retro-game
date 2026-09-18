@@ -43,7 +43,7 @@ function allocateTypeCounts(typePercents, total) {
   return counts;
 }
 
-export function generateRooms(gridSize, typePercents, hintCount) {
+export function generateRooms(gridSize, typePercents) {
   const rooms = {};
   const centre = Math.floor(gridSize / 2);
   const cells = [];
@@ -71,10 +71,6 @@ export function generateRooms(gridSize, typePercents, hintCount) {
   for (; idx < cells.length; idx++) {
     rooms[cells[idx]] = { type: 'storage', question: STORAGE_PROMPT, solved: false };
   }
-
-  shuffle([...cells]).slice(0, hintCount).forEach((id, i) => {
-    rooms[id].hintIndex = i;
-  });
   return rooms;
 }
 

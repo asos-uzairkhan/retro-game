@@ -88,23 +88,14 @@
           <p id="setup-types-total" class="type-total"></p>
         </fieldset>
 
-        <div class="form-grid">
-          <label class="field">Suspects <small>(one per line, 3–12 fictional names)</small>
-            <textarea id="setup-suspects" rows="6" placeholder="Captain Redshirt&#10;Dr. Vents&#10;Ensign Snacks"></textarea>
-          </label>
-          <label class="field">Clues <small>(one per line, 1–20, hidden in rooms)</small>
-            <textarea id="setup-hints" rows="6" placeholder="The imposter drinks tea, not coffee&#10;The imposter was on leave during the incident"></textarea>
-          </label>
-        </div>
-
-        <label class="field">The imposter <small>(kept secret until the reveal!)</small>
-          <select id="setup-imposter"><option value="">— add suspects first —</option></select>
+        <label class="field">Minimum hints per player <small>(everyone — including you — writes at least this many hints about themself before joining the lobby; max 20)</small>
+          <input id="setup-min-hints" type="number" min="1" max="20" step="1" value="3">
         </label>
 
         <p id="setup-error" class="form-error hidden"></p>
         <div class="form-actions">
           <button type="button" id="setup-back" class="btn btn-ghost">Back</button>
-          <button type="submit" class="btn btn-primary">Create Game 🚀</button>
+          <button type="submit" class="btn btn-primary">Continue ▶</button>
         </div>
       </form>
     </div>
@@ -134,11 +125,36 @@
         <p id="join-error2" class="form-error hidden"></p>
         <div class="form-actions">
           <button type="button" id="join-back2" class="btn btn-ghost">Back</button>
-          <button type="button" id="btn-join-go" class="btn btn-primary">Join Crew 🚀</button>
+          <button type="button" id="btn-join-go" class="btn btn-primary">Continue ▶</button>
         </div>
       </div>
     </div>
   </section>
+
+  <!-- ========== Hints (before joining the lobby, for host and players alike) ========== -->
+  <section id="screen-hints" class="screen hidden">
+    <div class="card card-wide">
+      <h2>🕵️ Your Secret Hints</h2>
+      <div id="hints-entry">
+        <p class="muted">Write at least <b id="hints-min-label"></b> hints about yourself (max 20), one per line. If you're picked as the imposter when the game starts, these get scattered around the map for the crew to find!</p>
+        <textarea id="hints-textarea" class="hints-textarea" rows="8" placeholder="One hint per line…&#10;e.g. I once broke a keyboard during a demo&#10;I've never seen the finale of my favourite show"></textarea>
+        <p id="hints-error" class="form-error hidden"></p>
+        <div class="form-actions">
+          <button type="button" id="hints-back" class="btn btn-ghost">Back</button>
+          <button type="button" id="hints-continue" class="btn btn-primary">Review Hints ▶</button>
+        </div>
+      </div>
+      <div id="hints-review" class="hidden">
+        <p class="muted">Double-check your hints — once accepted, you'll join the game.</p>
+        <ol id="hints-review-list" class="hints-review-list"></ol>
+        <div class="form-actions">
+          <button type="button" id="hints-review-back" class="btn btn-ghost">↩ Go Back &amp; Edit</button>
+          <button type="button" id="hints-review-accept" class="btn btn-primary">Accept ✅</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
 
   <!-- ========== Lobby ========== -->
   <section id="screen-lobby" class="screen hidden">

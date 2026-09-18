@@ -77,22 +77,8 @@ function initSetupForm() {
   });
   updateTypeTotal();
 
-  $('setup-suspects').addEventListener('input', () => {
-    const suspects = parseLines($('setup-suspects').value);
-    const sel = $('setup-imposter');
-    const prev = sel.value;
-    sel.innerHTML = suspects.length
-      ? suspects.map((s, i) => `<option value="${i}">${escapeHtml(s)}</option>`).join('')
-      : '<option value="">— add suspects first —</option>';
-    if (prev && suspects[prev] !== undefined) sel.value = prev;
-  });
-
   $('setup-form').addEventListener('submit', onSetupSubmit);
   $('setup-back').onclick = () => { sfx.click(); showScreen('landing'); };
-}
-
-function parseLines(text) {
-  return text.split('\n').map((s) => s.trim()).filter(Boolean);
 }
 
 function setupError(msg) {
@@ -116,32 +102,18 @@ async function onSetupSubmit(e) {
     if (pct > 0) typePercents[i.dataset.type] = pct;
   });
   const typeTotal = updateTypeTotal();
-  const suspects = parseLines($('setup-suspects').value);
-  const imposterIndex = Number($('setup-imposter').value);
-  const hints = parseLines($('setup-hints').value);
+  const minHints = Number($('setup-min-hints').value);
 
   if (!name || name.length > 20) return setupError('Please enter a name (1–20 characters).');
   if (!color) return setupError('Please pick a colour.');
   if (typeTotal > 100) return setupError('Room type percentages add up to more than 100%.');
-  if (suspects.length < 3 || suspects.length > 12) return setupError('Enter 3–12 suspects (one per line).');
-  if (new Set(suspects.map((s) => s.toLowerCase())).size !== suspects.length) return setupError('Suspect names must be unique.');
-  if ($('setup-imposter').value === '' || Number.isNaN(imposterIndex) || !suspects[imposterIndex]) return setupError('Pick which suspect is the imposter.');
-  if (hints.length < 1 || hints.length > 20) return setupError('Enter 1–20 clues (one per line).');
-  if (hints.length > gridSize * gridSize - 1) return setupError('More clues than rooms — reduce clues or enlarge the grid.');
+  if (!Number.isInteger(minHints) || minHints < 1 || minHints > 20) return setupError('Minimum hints must be between 1 and 20.');
 
-  const btn = e.submitter;
-  if (btn) btn.disabled = true;
-  try {
-    const code = await game.createGame({
-      name, color, gridSize, voteTimerSec, typePercents, suspects, imposterIndex, hints,
-    });
-    sfx.phase();
-    attachGame(code);
-  } catch (err) {
-    setupError(`Could not create game: ${err.message}`);
-  } finally {
-    if (btn) btn.disabled = false;
-  }
+  pendingSetupCfg = {
+    name, color, gridSize, voteTimerSec, typePercents, minHints,
+  };
+  sfx.pop();
+  enterHintFlow({ mode: 'create', min: minHints });
 }
 
 /* ================= Join flow ================= */
@@ -209,25 +181,125 @@ async function onJoinGo() {
   if (!name || name.length > 20) return joinError(2, 'Enter a name (1–20 characters).');
   if (!color) return joinError(2, 'Pick a colour.');
 
-  const g = await game.lookupGame(joinCode);
-  if (!g || g.meta.phase === 'end') return joinError(2, 'This game has already ended.');
-  const dupName = Object.values(g.players || {}).some(
-    (p) => p.name.trim().toLowerCase() === name.toLowerCase(),
-  );
-  if (dupName) return joinError(2, 'That name is already taken.');
-
   const btn = $('btn-join-go');
   btn.disabled = true;
   try {
-    await game.joinGame(joinCode, name, color);
-    sfx.join();
-    attachGame(joinCode);
+    const g = await game.lookupGame(joinCode);
+    if (!g || g.meta.phase === 'end') return joinError(2, 'This game has already ended.');
+    const dupName = Object.values(g.players || {}).some(
+      (p) => p.name.trim().toLowerCase() === name.toLowerCase(),
+    );
+    if (dupName) return joinError(2, 'That name is already taken.');
+
+    pendingJoin = { code: joinCode, name, color };
+    sfx.pop();
+    enterHintFlow({ mode: 'join', min: g.meta.minHints || 1 });
+    return undefined;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+/* ================= Hint collection (before joining the lobby) ================= */
+
+const MAX_HINTS = 20;
+
+let pendingSetupCfg = null;
+let pendingJoin = null;
+let hintFlowMode = null; // 'create' | 'join'
+let hintFlowMin = 1;
+let draftHints = [];
+
+function initHintsForm() {
+  $('hints-back').onclick = () => {
+    sfx.click();
+    if (hintFlowMode === 'create') {
+      showScreen('setup');
+    } else {
+      showScreen('join');
+      $('join-step2').classList.remove('hidden');
+      $('join-step1').classList.add('hidden');
+    }
+  };
+  $('hints-continue').onclick = onHintsContinue;
+  $('hints-review-back').onclick = () => {
+    sfx.click();
+    $('hints-review').classList.add('hidden');
+    $('hints-entry').classList.remove('hidden');
+  };
+  $('hints-review-accept').onclick = onHintsAccept;
+}
+
+function enterHintFlow({ mode, min }) {
+  hintFlowMode = mode;
+  hintFlowMin = Math.min(Math.max(Number(min) || 1, 1), MAX_HINTS);
+  draftHints = [];
+  $('hints-min-label').textContent = hintFlowMin;
+  $('hints-textarea').value = '';
+  hintsError(null);
+  $('hints-entry').classList.remove('hidden');
+  $('hints-review').classList.add('hidden');
+  showScreen('hints');
+}
+
+function hintsError(msg) {
+  const el = $('hints-error');
+  el.textContent = msg || '';
+  el.classList.toggle('hidden', !msg);
+  if (msg) sfx.error();
+}
+
+function onHintsContinue() {
+  hintsError(null);
+  const hints = $('hints-textarea').value
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((h, i, arr) => arr.indexOf(h) === i);
+  if (hints.length < hintFlowMin) return setHintsCountError(hints.length);
+  if (hints.length > MAX_HINTS) return hintsError(`That's ${hints.length} hints — please keep it to ${MAX_HINTS} or fewer.`);
+  const tooLong = hints.find((h) => h.length > 140);
+  if (tooLong) return hintsError(`One of your hints is over 140 characters: "${tooLong.slice(0, 40)}…"`);
+
+  draftHints = hints;
+  sfx.click();
+  $('hints-review-list').innerHTML = draftHints
+    .map((h) => `<li class="hint-review-item">${escapeHtml(h)}</li>`).join('');
+  $('hints-entry').classList.add('hidden');
+  $('hints-review').classList.remove('hidden');
+  return undefined;
+}
+
+function setHintsCountError(count) {
+  return hintsError(`You need at least ${hintFlowMin} distinct hint${hintFlowMin === 1 ? '' : 's'} (found ${count}). Write one hint per line.`);
+}
+
+async function onHintsAccept() {
+  const btn = $('hints-review-accept');
+  btn.disabled = true;
+  try {
+    if (hintFlowMode === 'create') {
+      const code = await game.createGame({ ...pendingSetupCfg, hints: draftHints });
+      sfx.phase();
+      attachGame(code);
+    } else {
+      await game.joinGame(pendingJoin.code, pendingJoin.name, pendingJoin.color, draftHints);
+      sfx.join();
+      attachGame(pendingJoin.code);
+    }
   } catch (err) {
-    // transaction lost a race → refresh taken colours and let the player re-pick
-    const fresh = await game.lookupGame(joinCode);
-    const taken = Object.values(fresh?.players || {}).map((p) => p.color);
-    getJoinColor = buildColorPicker($('join-colors'), { taken });
-    joinError(2, err.message);
+    if (hintFlowMode === 'create') {
+      toast(`Could not create game: ${err.message}`, 'error');
+    } else {
+      // transaction lost a race → refresh taken colours and let the player re-pick
+      const fresh = await game.lookupGame(pendingJoin.code).catch(() => null);
+      const taken = Object.values(fresh?.players || {}).map((p) => p.color);
+      getJoinColor = buildColorPicker($('join-colors'), { taken });
+      showScreen('join');
+      $('join-step1').classList.add('hidden');
+      $('join-step2').classList.remove('hidden');
+      joinError(2, err.message);
+    }
   } finally {
     btn.disabled = false;
   }
@@ -413,7 +485,11 @@ function wireButtons() {
   $('btn-start-game').onclick = async () => {
     sfx.click();
     if (Object.keys(state.players || {}).length < 1) return;
-    await game.setPhase('gameplay');
+    try {
+      await game.startGameplay();
+    } catch (err) {
+      toast(`Could not start the game: ${escapeHtml(err.message)}`, 'error');
+    }
   };
 
   $('btn-end-gameplay').onclick = async () => {
@@ -512,6 +588,7 @@ async function init() {
   renderLandingCrew();
   initSetupForm();
   initJoinForm();
+  initHintsForm();
   wireButtons();
   initMusicPlayer();
   showScreen('landing');

@@ -27,6 +27,11 @@
             ".write": "auth != null && ($uid === auth.uid || root.child('games/' + $code + '/meta/adminUid').val() === auth.uid)",
             "name": {
               ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 20"
+            },
+            "hints": {
+              "$idx": {
+                ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 140"
+              }
             }
           }
         },
@@ -46,6 +51,10 @@
               ".write": "auth != null && root.child('games/' + $code + '/rooms/' + $roomId + '/occupantId').val() === auth.uid",
               ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 500"
             },
+            "hintIndex": {
+              ".write": "auth != null && root.child('games/' + $code + '/meta/adminUid').val() === auth.uid",
+              ".validate": "newData.isNumber() || newData.val() === null"
+            },
             "pings": {
               ".write": "auth != null && root.child('games/' + $code + '/rooms/' + $roomId + '/occupantId').val() === auth.uid",
               "$uid": {
@@ -64,8 +73,8 @@
 
         "votes": {
           "$uid": {
-            ".write": "auth != null && $uid === auth.uid && !data.exists() && root.child('games/' + $code + '/meta/phase').val() === 'voting' && root.child('games/' + $code + '/meta/adminUid').val() !== auth.uid",
-            ".validate": "newData.isNumber()"
+            ".write": "auth != null && $uid === auth.uid && !data.exists() && root.child('games/' + $code + '/meta/phase').val() === 'voting'",
+            ".validate": "newData.isString()"
           }
         }
       }

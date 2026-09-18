@@ -15,22 +15,18 @@ import { sfx } from './sound.js';
 let secretsLoading = null;
 
 export async function loadSecrets({ withImposter = false } = {}) {
-  if (!state.suspects || !state.hints) {
+  if (!state.hints) {
     if (!secretsLoading) {
-      secretsLoading = Promise.all([
-        get(ref(db, `games/${state.code}/secrets/suspects`)),
-        get(ref(db, `games/${state.code}/secrets/hints`)),
-      ]).then(([s, h]) => {
-        state.suspects = s.val() || [];
+      secretsLoading = get(ref(db, `games/${state.code}/secrets/hints`)).then((h) => {
         state.hints = h.val() || [];
         secretsLoading = null;
       });
     }
     await secretsLoading;
   }
-  if (withImposter && state.imposterIndex === null) {
-    const snap = await get(ref(db, `games/${state.code}/secrets/imposterIndex`));
-    state.imposterIndex = snap.val();
+  if (withImposter && state.imposterUid === null) {
+    const snap = await get(ref(db, `games/${state.code}/secrets/imposterUid`));
+    state.imposterUid = snap.val();
   }
 }
 
@@ -59,8 +55,8 @@ export function computeResult() {
   votes.forEach((v) => { counts[v] = (counts[v] || 0) + 1; });
   let max = 0;
   for (const c of Object.values(counts)) max = Math.max(max, c);
-  const top = Object.keys(counts).filter((k) => counts[k] === max).map(Number);
-  const crewWins = votes.length > 0 && top.length === 1 && top[0] === state.imposterIndex;
+  const top = Object.keys(counts).filter((k) => counts[k] === max);
+  const crewWins = votes.length > 0 && top.length === 1 && top[0] === state.imposterUid;
   return { counts, crewWins };
 }
 
@@ -143,10 +139,11 @@ function voteTick() {
     }
   }
 
-  const eligible = Object.keys(state.players || {}).filter((u) => u !== state.meta.adminUid);
-  // Solo host games have no eligible voters — don't make the host wait out the full timer.
-  const allVoted = eligible.length === 0
-    || eligible.every((u) => state.votes && state.votes[u] !== undefined);
+  // No one (not even the host) is told who the imposter is ahead of time now,
+  // so every player — including the host — casts a vote.
+  const eligible = Object.keys(state.players || {});
+  const allVoted = eligible.length > 0
+    && eligible.every((u) => state.votes && state.votes[u] !== undefined);
   if (allVoted && !allVotedAt) allVotedAt = now();
   if (!allVoted) allVotedAt = null;
 
@@ -181,51 +178,40 @@ export async function renderVoting() {
 
   const cluesList = document.getElementById('voting-clues-list');
   const found = state.cluesFound || {};
-  const items = state.hints.map((h, i) => (found[i]
+  const items = (state.hints || []).map((h, i) => (found[i]
     ? `<li class="clue-item">🔍 ${escapeHtml(h)}</li>`
     : '<li class="clue-item undiscovered">❔ Undiscovered clue</li>'));
   cluesList.innerHTML = items.join('') || '<li class="muted">No clues in this game.</li>';
 
   const main = document.getElementById('voting-main');
-  if (isAdmin()) {
-    const eligible = Object.entries(state.players || {}).filter(([u]) => u !== state.meta.adminUid);
-    const voted = eligible.filter(([u]) => state.votes && state.votes[u] !== undefined);
-    main.innerHTML = `
-      <div class="vote-progress">
-        <p class="big">${voted.length} / ${eligible.length}</p>
-        <p>votes are in</p>
-        <p class="muted">You know too much to vote, host. The phase advances automatically.</p>
-        <div style="margin-top:14px">${voted.map(([u]) => crewChipHTML(state.players[u])).join(' ')}</div>
-      </div>`;
-    return;
-  }
-
   const myVote = state.votes?.[state.uid];
   if (myVote !== undefined) {
+    const votedPlayer = state.players?.[myVote];
     main.innerHTML = `
       <div class="vote-waiting">
-        <p>🗳️ Your vote for <b>${escapeHtml(state.suspects[myVote])}</b> is locked in.</p>
+        <p>🗳️ Your vote for <b>${votedPlayer ? escapeHtml(votedPlayer.name) : '?'}</b> is locked in.</p>
         <p class="muted">Waiting for the rest of the crew…</p>
       </div>`;
     return;
   }
 
+  const players = Object.entries(state.players || {});
   main.innerHTML = `
     <h3>Cast your vote</h3>
     <div class="suspect-list">
-      ${state.suspects.map((s, i) => `<button class="suspect-btn" data-i="${i}">🕵️ ${escapeHtml(s)}</button>`).join('')}
+      ${players.map(([uid, p]) => `<button class="suspect-btn" data-uid="${uid}">🕵️ ${crewChipHTML(p)}</button>`).join('')}
     </div>`;
   main.querySelectorAll('.suspect-btn').forEach((b) => {
-    b.onclick = () => castVote(Number(b.dataset.i));
+    b.onclick = () => castVote(b.dataset.uid, state.players[b.dataset.uid]?.name || '?');
   });
 }
 
-async function castVote(i) {
+async function castVote(uid, name) {
   sfx.click();
-  const ok = await confirmDialog('Confirm your vote', `Vote for ${state.suspects[i]}? This cannot be changed.`, 'Vote');
+  const ok = await confirmDialog('Confirm your vote', `Vote for ${name}? This cannot be changed.`, 'Vote');
   if (!ok) return;
   try {
-    await set(ref(db, `games/${state.code}/votes/${state.uid}`), i);
+    await set(ref(db, `games/${state.code}/votes/${state.uid}`), uid);
     sfx.vote();
     toast('Vote submitted! 🗳️', 'success');
   } catch (e) {
@@ -243,20 +229,22 @@ let revealSoundPlayed = false;
 function tallyHTML({ markImposter = false } = {}) {
   const votes = state.votes || {};
   const { counts } = computeResult();
-  const rows = state.suspects.map((s, i) => {
-    const voters = Object.entries(votes).filter(([, v]) => v === i)
+  const rows = Object.entries(state.players || {}).map(([uid, p]) => {
+    const voters = Object.entries(votes).filter(([, v]) => v === uid)
       .map(([u]) => (state.players?.[u] ? crewChipHTML(state.players[u]) : ''));
-    const imp = markImposter && i === state.imposterIndex;
-    return { i, s, count: counts[i] || 0, voters, imp };
+    const imp = markImposter && uid === state.imposterUid;
+    return {
+      uid, p, count: counts[uid] || 0, voters, imp,
+    };
   }).sort((a, b) => b.count - a.count);
 
   const noVote = Object.keys(state.players || {})
-    .filter((u) => u !== state.meta.adminUid && votes[u] === undefined)
+    .filter((u) => votes[u] === undefined)
     .map((u) => crewChipHTML(state.players[u]));
 
   return rows.map((r, idx) => `
     <div class="tally-row ${r.imp ? 'is-imposter' : ''}" style="animation-delay:${idx * 0.1}s">
-      <span class="suspect-name">${r.imp ? '👹' : '🕵️'} ${escapeHtml(r.s)}</span>
+      <span class="suspect-name">${r.imp ? '👹' : '🕵️'} ${crewChipHTML(r.p)}</span>
       <span class="tally-count">${r.count}</span>
       <span class="tally-voters">${r.voters.join('')}</span>
     </div>`).join('')
@@ -323,10 +311,10 @@ function startRevealCountdown(panel) {
 
 function showImposter(panel) {
   const { crewWins } = computeResult();
-  const name = state.suspects[state.imposterIndex] ?? '???';
+  const imposter = state.players?.[state.imposterUid];
   panel.innerHTML = `
     <p class="muted">The imposter was…</p>
-    <div class="imposter-name">👹 ${escapeHtml(name)}</div>
+    <div class="imposter-name">👹 ${imposter ? crewChipHTML(imposter) : '???'}</div>
     <div class="result-banner ${crewWins ? 'result-win' : 'result-lose'}">
       ${crewWins ? '🎉 The crew was right!' : '😈 The imposter got away!'}
     </div>`;
@@ -343,6 +331,7 @@ export async function renderSummary() {
   const { crewWins } = computeResult();
   const found = state.cluesFound || {};
   const groups = solvedRoomsGrouped();
+  const imposter = state.players?.[state.imposterUid];
 
   const stats = Object.entries(state.players || {}).map(([uid, p]) => {
     const solvedRooms = Object.values(state.rooms || {}).filter((r) => r.solvedBy === uid);
@@ -355,12 +344,12 @@ export async function renderSummary() {
       ${crewWins ? '🎉 The crew found the imposter!' : '😈 The imposter got away!'}
     </div>
     <h3>👹 The imposter</h3>
-    <p><b>${escapeHtml(state.suspects[state.imposterIndex] ?? '???')}</b></p>
+    <p>${imposter ? crewChipHTML(imposter) : '???'}</p>
     <h3>🗳️ Vote breakdown</h3>
     <div class="reveal-tally">${tallyHTML({ markImposter: true })}</div>
     <h3>🔍 Clues</h3>
     <ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:8px">
-      ${state.hints.map((h, i) => (found[i]
+      ${(state.hints || []).map((h, i) => (found[i]
         ? `<li class="clue-item">🔍 ${escapeHtml(h)}</li>`
         : `<li class="clue-item undiscovered">🚫 ${escapeHtml(h)} <small>(never discovered)</small></li>`)).join('')}
     </ul>
@@ -389,21 +378,22 @@ export function buildMarkdownSummary() {
   const { crewWins } = computeResult();
   const found = state.cluesFound || {};
   const votes = state.votes || {};
+  const imposter = state.players?.[state.imposterUid];
   const lines = [];
   lines.push(`# Retro Summary — Data-Tech Among Us Retro (${state.code})`, '');
   lines.push(`**Result:** ${crewWins ? 'The crew found the imposter! 🎉' : 'The imposter got away… 😈'}`);
-  lines.push(`**Imposter:** ${state.suspects[state.imposterIndex] ?? '???'}`, '');
+  lines.push(`**Imposter:** ${imposter?.name ?? '???'}`, '');
 
   lines.push('## Votes', '');
-  state.suspects.forEach((s, i) => {
-    const voters = Object.entries(votes).filter(([, v]) => v === i)
+  Object.entries(state.players || {}).forEach(([uid, p]) => {
+    const voters = Object.entries(votes).filter(([, v]) => v === uid)
       .map(([u]) => state.players?.[u]?.name || '?');
-    lines.push(`- **${s}**: ${voters.length} vote(s)${voters.length ? ` — ${voters.join(', ')}` : ''}`);
+    lines.push(`- **${p.name}**: ${voters.length} vote(s)${voters.length ? ` — ${voters.join(', ')}` : ''}`);
   });
   lines.push('');
 
   lines.push('## Clues', '');
-  state.hints.forEach((h, i) => {
+  (state.hints || []).forEach((h, i) => {
     lines.push(`- ${found[i] ? '🔍' : '🚫 *(undiscovered)*'} ${h}`);
   });
   lines.push('');
