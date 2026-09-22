@@ -209,6 +209,7 @@ let pendingJoin = null;
 let hintFlowMode = null; // 'create' | 'join'
 let hintFlowMin = 1;
 let draftHints = [];
+let hintFlowOptedOut = false;
 
 function initHintsForm() {
   $('hints-back').onclick = () => {
@@ -221,9 +222,11 @@ function initHintsForm() {
       $('join-step1').classList.add('hidden');
     }
   };
+  $('hints-optout').onclick = onHintsOptOut;
   $('hints-continue').onclick = onHintsContinue;
   $('hints-review-back').onclick = () => {
     sfx.click();
+    hintFlowOptedOut = false;
     $('hints-review').classList.add('hidden');
     $('hints-entry').classList.remove('hidden');
   };
@@ -234,6 +237,7 @@ function enterHintFlow({ mode, min }) {
   hintFlowMode = mode;
   hintFlowMin = Math.min(Math.max(Number(min) || 1, 1), MAX_HINTS);
   draftHints = [];
+  hintFlowOptedOut = false;
   $('hints-min-label').textContent = hintFlowMin;
   $('hints-textarea').value = '';
   hintsError(null);
@@ -262,12 +266,26 @@ function onHintsContinue() {
   if (tooLong) return hintsError(`One of your hints is over 140 characters: "${tooLong.slice(0, 40)}…"`);
 
   draftHints = hints;
+  hintFlowOptedOut = false;
   sfx.click();
   $('hints-review-list').innerHTML = draftHints
     .map((h) => `<li class="hint-review-item">${escapeHtml(h)}</li>`).join('');
+  $('hints-review-normal').classList.remove('hidden');
+  $('hints-review-optout').classList.add('hidden');
   $('hints-entry').classList.add('hidden');
   $('hints-review').classList.remove('hidden');
   return undefined;
+}
+
+function onHintsOptOut() {
+  hintsError(null);
+  draftHints = [];
+  hintFlowOptedOut = true;
+  sfx.click();
+  $('hints-review-normal').classList.add('hidden');
+  $('hints-review-optout').classList.remove('hidden');
+  $('hints-entry').classList.add('hidden');
+  $('hints-review').classList.remove('hidden');
 }
 
 function setHintsCountError(count) {
@@ -279,11 +297,11 @@ async function onHintsAccept() {
   btn.disabled = true;
   try {
     if (hintFlowMode === 'create') {
-      const code = await game.createGame({ ...pendingSetupCfg, hints: draftHints });
+      const code = await game.createGame({ ...pendingSetupCfg, hints: draftHints, optedOut: hintFlowOptedOut });
       sfx.phase();
       attachGame(code);
     } else {
-      await game.joinGame(pendingJoin.code, pendingJoin.name, pendingJoin.color, draftHints);
+      await game.joinGame(pendingJoin.code, pendingJoin.name, pendingJoin.color, draftHints, hintFlowOptedOut);
       sfx.join();
       attachGame(pendingJoin.code);
     }
@@ -436,7 +454,8 @@ function renderHUD() {
   const rooms = Object.values(state.rooms || {}).filter((r) => r.type !== 'start');
   const solved = rooms.filter((r) => r.solved).length;
   $('hud-rooms').textContent = `🚪 ${solved}/${rooms.length}`;
-  $('hud-clues').textContent = `🔍 ${Object.keys(state.cluesFound || {}).length}/${state.meta.hintCount || 0}`;
+  // No total shown here — the hint count would hint at who the imposter is.
+  $('hud-clues').textContent = `🔍 ${Object.keys(state.cluesFound || {}).length}`;
   // The lobby has its own dedicated leave/disband button, so hide this one there.
   $('btn-leave-game').classList.toggle('hidden', state.meta.phase === 'joining');
 }

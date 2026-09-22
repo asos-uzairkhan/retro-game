@@ -43,7 +43,13 @@ export async function createGame(cfg) {
     },
     players: {
       [state.uid]: {
-        name: cfg.name, color: cfg.color, isAdmin: true, online: true, location: 'start', hints: cfg.hints,
+        name: cfg.name,
+        color: cfg.color,
+        isAdmin: true,
+        online: true,
+        location: 'start',
+        hints: cfg.optedOut ? [] : cfg.hints,
+        optedOut: !!cfg.optedOut,
       },
     },
     rooms,
@@ -57,7 +63,7 @@ export async function lookupGame(code) {
   return snap.exists() ? snap.val() : null;
 }
 
-export async function joinGame(code, name, color, hints) {
+export async function joinGame(code, name, color, hints, optedOut) {
   const user = await signIn();
   state.uid = user.uid;
 
@@ -81,7 +87,13 @@ export async function joinGame(code, name, color, hints) {
   const res = await runTransaction(ref(db, `games/${code}/players/${state.uid}`), (existing) => {
     if (existing) return existing; // already joined — no-op commit
     return {
-      name, color, isAdmin: false, online: true, location: 'start', hints,
+      name,
+      color,
+      isAdmin: false,
+      online: true,
+      location: 'start',
+      hints: optedOut ? [] : hints,
+      optedOut: !!optedOut,
     };
   });
   if (!res.committed) {
@@ -144,8 +156,9 @@ export async function setPhase(phase) {
 // hints into random non-start rooms, then advances to the gameplay phase.
 export async function startGameplay() {
   const players = state.players || {};
-  const uids = Object.keys(players);
-  if (!uids.length) throw new Error('No players to choose an imposter from.');
+  // Players who opted out of sharing hints are never eligible to be the imposter.
+  const uids = Object.keys(players).filter((u) => !players[u].optedOut);
+  if (!uids.length) throw new Error('Everyone opted out of sharing hints — at least one player needs to share hints to start.');
 
   const imposterUid = uids[Math.floor(Math.random() * uids.length)];
   const hints = players[imposterUid]?.hints || [];

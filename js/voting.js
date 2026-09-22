@@ -178,10 +178,11 @@ export async function renderVoting() {
 
   const cluesList = document.getElementById('voting-clues-list');
   const found = state.cluesFound || {};
-  const items = (state.hints || []).map((h, i) => (found[i]
-    ? `<li class="clue-item">🔍 ${escapeHtml(h)}</li>`
-    : '<li class="clue-item undiscovered">❔ Undiscovered clue</li>'));
-  cluesList.innerHTML = items.join('') || '<li class="muted">No clues in this game.</li>';
+  // Only list clues actually found — the total count would hint at who the imposter is.
+  const items = (state.hints || [])
+    .filter((h, i) => found[i])
+    .map((h) => `<li class="clue-item">🔍 ${escapeHtml(h)}</li>`);
+  cluesList.innerHTML = items.join('') || '<li class="muted">No clues found yet.</li>';
 
   const main = document.getElementById('voting-main');
   const myVote = state.votes?.[state.uid];

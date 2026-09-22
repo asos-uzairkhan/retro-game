@@ -32,6 +32,9 @@
               "$idx": {
                 ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 140"
               }
+            },
+            "optedOut": {
+              ".validate": "newData.isBoolean()"
             }
           }
         },

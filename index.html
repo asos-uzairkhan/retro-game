@@ -139,14 +139,25 @@
         <p class="muted">Write at least <b id="hints-min-label"></b> hints about yourself (max 20), one per line. If you're picked as the imposter when the game starts, these get scattered around the map for the crew to find!</p>
         <textarea id="hints-textarea" class="hints-textarea" rows="8" placeholder="One hint per line…&#10;e.g. I once broke a keyboard during a demo&#10;I've never seen the finale of my favourite show"></textarea>
         <p id="hints-error" class="form-error hidden"></p>
+        <p class="muted optout-hint">Not comfortable sharing personal hints? You can opt out instead — no one will know, and you won't be picked as the imposter this game.</p>
         <div class="form-actions">
           <button type="button" id="hints-back" class="btn btn-ghost">Back</button>
+          <button type="button" id="hints-optout" class="btn btn-secondary">🙈 Opt Out</button>
           <button type="button" id="hints-continue" class="btn btn-primary">Review Hints ▶</button>
         </div>
       </div>
       <div id="hints-review" class="hidden">
-        <p class="muted">Double-check your hints — once accepted, you'll join the game.</p>
-        <ol id="hints-review-list" class="hints-review-list"></ol>
+        <div id="hints-review-normal">
+          <p class="muted">Double-check your hints — once accepted, you'll join the game.</p>
+          <ol id="hints-review-list" class="hints-review-list"></ol>
+        </div>
+        <div id="hints-review-optout" class="hidden">
+          <p class="muted">You've chosen not to share hints.</p>
+          <div class="optout-notice">
+            <p>🤫 <b>Keep this to yourself</b> — don't tell the crew you opted out.</p>
+            <p>You will <b>not</b> be picked as the imposter this game. Carry on as normal to maintain the integrity of the game!</p>
+          </div>
+        </div>
         <div class="form-actions">
           <button type="button" id="hints-review-back" class="btn btn-ghost">↩ Go Back &amp; Edit</button>
           <button type="button" id="hints-review-accept" class="btn btn-primary">Accept ✅</button>

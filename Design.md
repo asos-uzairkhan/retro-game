@@ -103,8 +103,8 @@ On submit, the client:
 
 Before anyone — host or joining player — actually appears in the lobby, they go through a two-step flow:
 
-1. **Entry:** write at least the game's configured minimum number of hints about themself (free text, max 20 total). Rows can be added/removed, but never below the minimum.
-2. **Review:** see all their hints listed clearly, each as its own distinct numbered item, with **Accept** or **Go Back & Edit**. Accepting is what actually creates the game (host) or joins it (player); going back returns to the entry step with everything preserved.
+1. **Entry:** write at least the game's configured minimum number of hints about themself (free text, max 20 total). Rows can be added/removed, but never below the minimum. Anyone uncomfortable sharing personal hints can instead **opt out** — they submit no hints and are guaranteed never to be picked as the imposter.
+2. **Review:** see all their hints listed clearly, each as its own distinct numbered item, with **Accept** or **Go Back & Edit**. Accepting is what actually creates the game (host) or joins it (player); going back returns to the entry step with everything preserved. Players who opted out instead see a private notice reminding them not to reveal that they opted out, so the crew still treats them as a normal suspect.
 
 These hints are private to each player until (and unless) that player is picked as the imposter, at which point they're the pool of clues scattered across the map (Section 8). The imposter identity itself is written to a location that clients never render until the reveal phase (Section 13.2 covers trust level).
 
@@ -186,11 +186,11 @@ The full pool is authored during implementation and reviewed by the team; it mus
 
 ## 8. Hints / Clues
 
-- Every player writes their own hints about themself before joining the lobby (Section 4a) — at least the host-configured minimum, up to 20 (e.g. "I was on leave for part of this sprint", "I drink tea, not coffee").
-- When the admin starts gameplay, **one player is picked at random as the imposter** and their hints become this game's clue pool, each placed in a **distinct, randomly chosen non-start room**. Everyone else's hints are discarded and never shown.
+- Every player writes their own hints about themself before joining the lobby (Section 4a) — at least the host-configured minimum, up to 20 (e.g. "I was on leave for part of this sprint", "I drink tea, not coffee") — or opts out entirely if they'd rather not share.
+- When the admin starts gameplay, **one player is picked at random as the imposter from those who didn't opt out** and their hints become this game's clue pool, each placed in a **distinct, randomly chosen non-start room**. Everyone else's hints are discarded and never shown. If every player opts out, the admin can't start gameplay until at least one person shares hints.
 - A clue is **discovered** when its room is solved. The solving player sees a "You found a clue!" toast, but the clue text remains hidden.
-- During gameplay, the team sees only a counter: "Clues found: 3 / 8".
-- **All discovered clues are revealed to everyone at the start of the voting phase** — as plain hint text, without saying whose hints they are. Clues in rooms that were never solved stay hidden forever (they appear greyed-out as "undiscovered" in the end summary). A sharp-eyed imposter may recognise their own hint text once it's revealed, same as the classic party-game trope — everyone else has to deduce it from context.
+- During gameplay and voting, the team only sees how many clues **they've found so far** — never the total number of clues in the game, since that total would itself hint at who the imposter is (or, combined with who opted out, rule suspects in or out).
+- **All discovered clues are revealed to everyone at the start of the voting phase** — as plain hint text, without saying whose hints they are. Clues in rooms that were never solved stay hidden forever (they appear greyed-out as "undiscovered" in the end summary, once the imposter has already been revealed). A sharp-eyed imposter may recognise their own hint text once it's revealed, same as the classic party-game trope — everyone else has to deduce it from context.
 
 ---
 
@@ -321,7 +321,8 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
           "isAdmin": true,
           "online": true,
           "location": "start",         // "start" | roomId
-          "hints": ["Hint about me 1", "Hint about me 2"]   // self-authored, min–20
+          "hints": ["Hint about me 1", "Hint about me 2"],   // self-authored, min–20 (empty if optedOut)
+          "optedOut": false            // true if they chose not to share hints \u2014 never picked as imposter
         }
       },
       "rooms": {

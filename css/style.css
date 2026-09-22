@@ -325,6 +325,18 @@ fieldset.field legend { padding: 0 8px; }
   font-family: inherit;
   margin-bottom: 14px;
 }
+.optout-hint { font-size: .85rem; margin: 4px 0 0; }
+.optout-notice {
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.optout-notice p { margin: 0; }
 .hints-review-list {
   list-style: none;
   counter-reset: hint-review;
