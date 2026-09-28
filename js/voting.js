@@ -63,12 +63,35 @@ export function computeResult() {
 /* ===== Reflection ===== */
 
 let lastHighlight = null;
+// Only the host can record actions; { roomId, draft } while an inline editor is open.
+let editingAction = null;
+
+function actionBlockHTML(r, admin) {
+  if (editingAction?.roomId === r.id) {
+    return `
+      <div class="reflect-action reflect-action-editing">
+        <textarea class="reflect-action-input" maxlength="500" placeholder="What will the team do about this?">${escapeHtml(editingAction.draft)}</textarea>
+        <div class="reflect-action-btns">
+          <button type="button" class="btn btn-secondary btn-xs reflect-action-save">Save</button>
+          <button type="button" class="btn btn-ghost btn-xs reflect-action-cancel">Cancel</button>
+        </div>
+      </div>`;
+  }
+  if (admin) {
+    return `
+      <div class="reflect-action">
+        ${r.action ? `<p class="reflect-action-text">🎯 <b>Action:</b> ${escapeHtml(r.action)}</p>` : ''}
+        <button type="button" class="btn btn-ghost btn-xs reflect-action-edit">${r.action ? '✏️ Edit action' : '+ Add action'}</button>
+      </div>`;
+  }
+  return r.action ? `<div class="reflect-action"><p class="reflect-action-text">🎯 <b>Action:</b> ${escapeHtml(r.action)}</p></div>` : '';
+}
 
 export function renderReflection() {
   const container = document.getElementById('reflection-list');
   const admin = isAdmin();
   document.getElementById('reflection-hint').textContent = admin
-    ? 'Click an item to highlight it on every screen.'
+    ? 'Click an item to highlight it on every screen. Record an action against anything that needs follow-up.'
     : 'The host controls the shared highlight.';
 
   const groups = solvedRoomsGrouped();
@@ -80,15 +103,37 @@ export function renderReflection() {
           <p class="reflect-q">${escapeHtml(r.question)}</p>
           <p class="reflect-a">${escapeHtml(r.answer)}</p>
           <p class="reflect-by">${solverChip(r.solvedBy)}</p>
+          ${actionBlockHTML(r, admin)}
         </div>`).join('')}
     </div>`).join('') : '<p class="muted">No rooms were solved. A quiet sprint indeed…</p>';
 
   if (admin) {
     container.querySelectorAll('.reflect-item').forEach((el) => {
-      el.onclick = () => {
+      el.onclick = (e) => {
+        if (e.target.closest('.reflect-action')) return;
         sfx.click();
         update(ref(db, `games/${state.code}/meta`), { highlightedRoom: el.dataset.room });
       };
+    });
+    container.querySelectorAll('.reflect-action-edit').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const roomId = btn.closest('.reflect-item').dataset.room;
+        editingAction = { roomId, draft: state.rooms?.[roomId]?.action || '' };
+        renderReflection();
+        const ta = container.querySelector('.reflect-action-input');
+        if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); }
+      };
+    });
+    container.querySelectorAll('.reflect-action-input').forEach((ta) => {
+      ta.onclick = (e) => e.stopPropagation();
+      ta.oninput = (e) => { if (editingAction) editingAction.draft = e.target.value; };
+    });
+    container.querySelectorAll('.reflect-action-save').forEach((btn) => {
+      btn.onclick = (e) => { e.stopPropagation(); saveAction(); };
+    });
+    container.querySelectorAll('.reflect-action-cancel').forEach((btn) => {
+      btn.onclick = (e) => { e.stopPropagation(); editingAction = null; renderReflection(); };
     });
   }
   document.getElementById('reflection-admin').classList.toggle('hidden', !admin);
@@ -98,6 +143,22 @@ export function renderReflection() {
     lastHighlight = hl;
     container.querySelector('.highlighted')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     if (!admin) sfx.click();
+  }
+}
+
+async function saveAction() {
+  if (!editingAction) return;
+  const { roomId, draft } = editingAction;
+  const text = draft.trim();
+  try {
+    if (text) await update(ref(db, `games/${state.code}/rooms/${roomId}`), { action: text });
+    else await set(ref(db, `games/${state.code}/rooms/${roomId}/action`), null);
+  } catch (e) {
+    sfx.error();
+    toast(`Could not save action: ${escapeHtml(e.message)}`, 'error');
+  } finally {
+    editingAction = null;
+    renderReflection();
   }
 }
 
@@ -362,8 +423,17 @@ export async function renderSummary() {
           <p class="reflect-q">${escapeHtml(r.question)}</p>
           <p class="reflect-a">${escapeHtml(r.answer)}</p>
           <p class="reflect-by">${solverChip(r.solvedBy)}</p>
+          ${r.action ? `<p class="reflect-action-text">🎯 <b>Action:</b> ${escapeHtml(r.action)}</p>` : ''}
         </div>`).join('')}
     `).join('') || '<p class="muted">No rooms were solved.</p>'}
+    <h3>🎯 Actions</h3>
+    ${(() => {
+      const actionItems = groups.flatMap((g) => g.rooms.filter((r) => r.action));
+      return actionItems.length ? `
+        <ul style="list-style:none;padding:0;display:flex;flex-direction:column;gap:8px">
+          ${actionItems.map((r) => `<li class="clue-item">🎯 ${escapeHtml(r.action)} <small class="muted">— re: "${escapeHtml(r.question)}"</small></li>`).join('')}
+        </ul>` : '<p class="muted">No actions were recorded.</p>';
+    })()}
     <h3>🏆 Crew stats</h3>
     <div class="stats-grid">
       ${stats.map(({ p, solved, clues }) => `
@@ -400,7 +470,8 @@ export function buildMarkdownSummary() {
   lines.push('');
 
   lines.push('## Retro output', '');
-  for (const g of solvedRoomsGrouped()) {
+  const groups = solvedRoomsGrouped();
+  for (const g of groups) {
     lines.push(`### ${g.name} — ${g.category}`, '');
     for (const r of g.rooms) {
       const solver = state.players?.[r.solvedBy]?.name || '?';
@@ -408,6 +479,16 @@ export function buildMarkdownSummary() {
       lines.push(`**A:** ${r.answer} *(— ${solver})*`, '');
     }
   }
+  lines.push('');
+
+  lines.push('## Actions', '');
+  const actionItems = groups.flatMap((g) => g.rooms.filter((r) => r.action));
+  if (actionItems.length) {
+    for (const r of actionItems) lines.push(`- ${r.action} *(re: "${r.question}")*`);
+  } else {
+    lines.push('_No actions recorded._');
+  }
+
   return lines.join('\n');
 }
 
@@ -418,4 +499,5 @@ export function resetPhaseLocals() {
   resultSoundPlayed = false;
   revealSoundPlayed = false;
   lastHighlight = null;
+  editingAction = null;
 }

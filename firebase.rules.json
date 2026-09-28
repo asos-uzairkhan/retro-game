@@ -2,6 +2,28 @@
   "rules": {
     ".read": false,
     ".write": false,
+    "feedback": {
+      ".read": false,
+      "$id": {
+        ".write": "auth != null && !data.exists()",
+        ".validate": "newData.hasChildren(['message', 'createdAt'])",
+        "message": {
+          ".validate": "newData.isString() && newData.val().length >= 1 && newData.val().length <= 1000"
+        },
+        "code": {
+          ".validate": "newData.isString() && newData.val().length <= 10"
+        },
+        "uid": {
+          ".validate": "newData.isString() && newData.val() === auth.uid"
+        },
+        "createdAt": {
+          ".validate": "newData.val() === now"
+        },
+        "$other": {
+          ".validate": false
+        }
+      }
+    },
     "games": {
       "$code": {
         ".read": "auth != null",
@@ -57,6 +79,10 @@
             "hintIndex": {
               ".write": "auth != null && root.child('games/' + $code + '/meta/adminUid').val() === auth.uid",
               ".validate": "newData.isNumber() || newData.val() === null"
+            },
+            "action": {
+              ".write": "auth != null && root.child('games/' + $code + '/meta/adminUid').val() === auth.uid",
+              ".validate": "newData.isString() && newData.val().length <= 500"
             },
             "pings": {
               ".write": "auth != null && root.child('games/' + $code + '/rooms/' + $roomId + '/occupantId').val() === auth.uid",

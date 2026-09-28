@@ -373,6 +373,26 @@ fieldset.field legend { padding: 0 8px; }
   justify-content: center;
 }
 
+/* ===== Feedback button ===== */
+.btn-feedback-float {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 40;
+  background: var(--panel);
+  border: 2px solid var(--line);
+  border-radius: 12px;
+  padding: 10px 16px;
+  color: var(--text);
+  font-family: inherit;
+  font-weight: 700;
+  font-size: .85rem;
+  cursor: pointer;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, .4);
+  transition: transform .15s, border-color .15s;
+}
+.btn-feedback-float:hover { transform: scale(1.05); border-color: var(--accent); }
+
 /* ===== Music player ===== */
 .music-player {
   position: fixed;
@@ -745,6 +765,12 @@ fieldset.field legend { padding: 0 8px; }
 .reflect-q { margin: 0 0 6px; color: var(--muted); font-style: italic; }
 .reflect-a { margin: 0 0 8px; font-weight: 600; white-space: pre-wrap; }
 .reflect-by { margin: 0; font-size: .85rem; }
+
+.reflect-action { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.reflect-action-text { margin: 0 0 8px; font-size: .9rem; white-space: pre-wrap; }
+.reflect-action-input { min-height: 60px; margin-top: 0; }
+.reflect-action-btns { display: flex; gap: 10px; margin-top: 8px; }
+.btn-xs { padding: 6px 14px; font-size: .8rem; box-shadow: none; }
 
 /* ===== Voting ===== */
 .vote-timer { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }

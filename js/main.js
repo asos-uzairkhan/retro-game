@@ -3,12 +3,14 @@ import {
   state, isAdmin, resetGameState,
   COLORS, ROOM_TYPES, PLAYABLE_TYPES, PHASE_LABELS,
 } from './state.js';
-import { db, ref, onValue, signIn } from './firebase.js';
+import {
+  db, ref, push, serverTimestamp, onValue, signIn,
+} from './firebase.js';
 import * as game from './game.js';
 import * as map from './map.js';
 import * as voting from './voting.js';
 import {
-  showScreen, toast, initStars, escapeHtml, closeModal, confirmDialog,
+  showScreen, toast, initStars, escapeHtml, closeModal, confirmDialog, openModal,
 } from './ui.js';
 import { sfx, toggleMute, isMuted } from './sound.js';
 import { initMusicPlayer, showMusicPlayer, hideMusicPlayer } from './music.js';
@@ -591,6 +593,46 @@ function wireButtons() {
     const m = toggleMute();
     muteBtn.textContent = m ? '🔇' : '🔊';
     if (!m) sfx.pop();
+  };
+
+  $('btn-feedback').onclick = () => openFeedbackModal();
+}
+
+/* ================= Feedback ================= */
+
+function openFeedbackModal() {
+  sfx.click();
+  const overlay = openModal(`
+    <h3>💬 Send feedback</h3>
+    <p>Spotted a bug or have an idea? Let us know — this goes straight to the dev.</p>
+    <form id="feedback-form">
+      <textarea id="feedback-text" maxlength="1000" rows="5" placeholder="What's on your mind?" required></textarea>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" data-act="cancel">Cancel</button>
+        <button type="submit" class="btn btn-primary" data-act="ok">Send</button>
+      </div>
+    </form>`);
+  const textarea = overlay.querySelector('#feedback-text');
+  textarea.focus();
+  overlay.querySelector('[data-act=cancel]').onclick = () => { sfx.click(); closeModal(); };
+  overlay.querySelector('#feedback-form').onsubmit = async (e) => {
+    e.preventDefault();
+    const message = textarea.value.trim();
+    if (!message) return;
+    try {
+      const user = await signIn();
+      await push(ref(db, 'feedback'), {
+        message,
+        uid: user.uid,
+        code: state.code || null,
+        createdAt: serverTimestamp(),
+      });
+      sfx.pop();
+      closeModal();
+      toast('Thanks for the feedback! 🙌', 'success');
+    } catch (err) {
+      toast(`Could not send feedback: ${escapeHtml(err.message)}`, 'error');
+    }
   };
 }
 
