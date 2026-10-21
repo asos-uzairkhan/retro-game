@@ -89,6 +89,14 @@
               "$uid": {
                 ".validate": "newData.isBoolean()"
               }
+            },
+            "reactions": {
+              "$uid": {
+                ".write": "auth != null && $uid === auth.uid",
+                "$key": {
+                  ".validate": "($key === 'agree' || $key === 'metoo' || $key === 'love' || $key === 'celebrate' ||$key === 'funny' || $key === 'think') && newData.val() === true"
+                }
+              }
             }
           }
         },

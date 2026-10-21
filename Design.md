@@ -207,10 +207,23 @@ The full pool is authored during implementation and reviewed by the team; it mus
 ### 9.2 Reflection
 
 - The map is frozen (no movement, no answering).
-- All clients show a synchronized review view: the list of solved rooms with room type, question, answer, and answering player, grouped by room type (i.e. by retro category).
+- All clients show a synchronized review view: the list of solved rooms with room type, question, answer, and answering player. By default these are grouped by room type (i.e. by retro category); the admin can switch the whole room to a **Topic view** (see 9.2.2).
 - The admin drives discussion verbally (the team is expected to be in a call or co-located); the admin's client controls a shared "currently highlighted room" pointer so all screens focus on the same item.
 - Unsolved rooms and clue texts are **not** shown here.
 - Admin advances with **Start Voting**.
+
+#### 9.2.1 Reactions
+
+- Available reactions: 👍 Agree, 🙋 Me too, ❤️ Love this, 🎉 Celebrate, 😂 Funny, 🤔 Worth discussing. An answer only displays reactions that have at least one vote; a ➕ button opens a picker with the unused ones. Any player (including the admin) can toggle any reaction on any answer, including their own; reactions are anonymous in the UI except for the hover tooltip, which lists who reacted.
+- Counts update live without re-rendering the list, so the admin's open action editor or dropdown is never disturbed.
+- Reaction counts are included in the end summary and the Markdown export.
+
+#### 9.2.2 Topic grouping
+
+- Admin-only toolbar: **Room type** / **Topic** view toggle and **Regroup**. The chosen view is stored in `meta/reflectionView` so every screen follows it.
+- The first time Topic view is chosen, the admin's client clusters the answers locally (`js/topics.js`: stopword removal, light stemming, TF-IDF cosine similarity boosted by a small lexicon of common retro themes, average-linkage clustering) and writes the result to `meta/topicGroups`. No network service or LLM is involved. Singletons are collected under "Other / one-offs".
+- Because grouping is heuristic, the admin can **rename** a topic, **move** an answer to another or a new topic, or **Regroup** (re-run clustering, discarding manual edits). Answers missing from every stored topic show under a render-only "Unsorted" group so nothing is ever hidden.
+- In Topic view each answer shows a chip with its original room category.
 
 ---
 
@@ -262,7 +275,7 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
 | Join form | 2 | Code, name, colour picker (taken colours disabled) |
 | Lobby | 2 | Game code (large), player list, admin: Start Game / kick buttons |
 | Game board | 3 | Grid map, HUD, question modal, answer form |
-| Reflection view | 4 | Grouped Q&A list, shared highlight pointer |
+| Reflection view | 4 | Q&A list grouped by room type or by topic, reactions, shared highlight pointer |
 | Voting view | 5 | Clue list, suspect ballot, timer; admin: progress view |
 | Reveal view | 6 | Vote tally, imposter reveal animation |
 | Summary view | 7 | Full summary + Markdown export |
@@ -287,7 +300,8 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
 │   ├── game.js         # phase state machine, admin actions
 │   ├── map.js          # generation, rendering, accessibility logic
 │   ├── questions.js    # built-in question pools
-│   ├── voting.js       # voting, reveal, summary
+│   ├── voting.js       # reflection (reactions, topic view), voting, reveal, summary
+│   ├── topics.js       # client-side clustering of answers into topics
 │   ├── music.js        # optional gameplay background music player
 │   └── ui.js           # modals, toasts, shared components
 └── firebase.rules.json # RTDB security rules (deployed separately)
@@ -312,7 +326,11 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
         "voteTimerSec": 180,
         "minHints": 3,                // host-configured minimum hints per player (1–20)
         "hintCount": 5,                // number of hints scattered, set when gameplay starts
-        "highlightedRoom": "r3_4"     // reflection-phase shared pointer, nullable
+        "highlightedRoom": "r3_4",    // reflection-phase shared pointer, nullable
+        "reflectionView": "topic",    // reflection layout: "type" (default) | "topic"
+        "topicGroups": {              // written by the admin's client; see 9.2.2
+          "t0": { "label": "Deployments & releases", "order": 0, "rooms": { "r3_4": true, "r1_2": true } }
+        }
       },
       "players": {
         "{uid}": {
@@ -333,7 +351,11 @@ Games are not deleted automatically; stale-game cleanup is out of scope for v1.
           "solved": false,
           "solvedBy": null,            // uid
           "answer": null,              // free text, written on solve
-          "hintIndex": null            // index into secrets/hints, null = no hint; see 13.2
+          "hintIndex": null,           // index into secrets/hints, null = no hint; see 13.2
+          "action": null,              // admin-recorded follow-up, optional
+          "reactions": {               // reflection-phase reactions; each player writes only their own uid
+            "{uid}": { "agree": true, "love": true }   // keys: agree|metoo|love|celebrate|funny|think
+          }
         }
       },
       "secrets": {                     // never rendered before the appropriate phase; written when gameplay starts
@@ -364,6 +386,7 @@ Do **not** invest in obfuscation/encryption for v1.
 - Only authenticated (anonymous) users can read/write.
 - `meta/phase`, `meta/minHints`/`hintCount`, `secrets`, and `rooms/*/hintIndex` writable only by `adminUid` (the admin assigns hints/imposter once, when starting gameplay).
 - A player can write only their own `players/{uid}` node (including their own `hints`) and their own `votes/{uid}` (and only during the voting phase, and only once — any player, including the admin, may vote).
+- A player can write only their own `rooms/*/reactions/{uid}` entries, limited to the five whitelisted keys with value `true`. `meta` (including `reflectionView` and `topicGroups`) is admin-writable only.
 - `rooms/*/occupantId` claimable only when currently `null` (transaction) or by its current holder (release).
 - `rooms/*/answer`, `solved`, `solvedBy` writable only by the room's current occupant, only while `solved == false`.
 - Validate string lengths (name ≤ 20, hint ≤ 140, answer ≤ 500) in rules.
@@ -375,7 +398,7 @@ Do **not** invest in obfuscation/encryption for v1.
 | Case | Behaviour |
 |---|---|
 | Duplicate name on join | Rejected — names unique per game |
-| Colour taken | Disabled in picker; race resolved by transaction, loser re-picks |
+| Colour taken | Disabled in picker. If it's taken while the player is still writing hints, the join auto-assigns the first free colour, keeps their hints, and shows a toast telling them their new colour |
 | 2 players click same room | RTDB transaction; loser sees "room occupied" |
 | Player closes tab mid-question | `onDisconnect` frees the room; question unanswered, room unsolved |
 | Admin ends gameplay while someone is answering | In-flight answer submission is accepted if it lands before the phase write; otherwise discarded with a notice |

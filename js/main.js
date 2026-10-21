@@ -241,7 +241,8 @@ function enterHintFlow({ mode, min }) {
   draftHints = [];
   hintFlowOptedOut = false;
   $('hints-min-label').textContent = hintFlowMin;
-  $('hints-textarea').value = '';
+  // The textarea is deliberately not cleared here, so hints survive going back or a
+  // failed join. It's cleared once a game is actually joined (see attachGame).
   hintsError(null);
   $('hints-entry').classList.remove('hidden');
   $('hints-review').classList.add('hidden');
@@ -303,15 +304,21 @@ async function onHintsAccept() {
       sfx.phase();
       attachGame(code);
     } else {
-      await game.joinGame(pendingJoin.code, pendingJoin.name, pendingJoin.color, draftHints, hintFlowOptedOut);
+      const requested = pendingJoin.color;
+      const assigned = await game.joinGame(
+        pendingJoin.code, pendingJoin.name, requested, draftHints, hintFlowOptedOut,
+      );
       sfx.join();
       attachGame(pendingJoin.code);
+      if (assigned !== requested) {
+        toast(`🎨 ${requested} was taken while you were writing your hints — you're ${assigned} instead.`, 'info', 6000);
+      }
     }
   } catch (err) {
     if (hintFlowMode === 'create') {
       toast(`Could not create game: ${err.message}`, 'error');
     } else {
-      // transaction lost a race → refresh taken colours and let the player re-pick
+      // Name clash or full game → send them back to step 2; their hints are kept.
       const fresh = await game.lookupGame(pendingJoin.code).catch(() => null);
       const taken = Object.values(fresh?.players || {}).map((p) => p.color);
       getJoinColor = buildColorPicker($('join-colors'), { taken });
@@ -336,6 +343,7 @@ function attachGame(code) {
   lastPhase = null;
   prevPlayerCount = null;
   localStorage.setItem('retro_code', code);
+  $('hints-textarea').value = '';
 
   for (const key of ['meta', 'players', 'rooms', 'cluesFound', 'votes']) {
     const unsub = onValue(ref(db, `games/${code}/${key}`), (snap) => onData(key, snap.val()));
@@ -651,6 +659,7 @@ async function init() {
   initJoinForm();
   initHintsForm();
   wireButtons();
+  voting.initReflection();
   initMusicPlayer();
   showScreen('landing');
 

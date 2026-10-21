@@ -65,8 +65,10 @@ The host creates the game, shares the code, and drives the retro forward. The ho
 
 ### 4. Reflection
 
-- The map freezes and everyone sees the same synced view: every solved room's question, answer, and who answered it, grouped by retro category.
+- The map freezes and everyone sees the same synced view: every solved room's question, answer, and who answered it.
+- By default answers are grouped by retro category. With lots of answers, use the **Group by** toolbar to switch to **🧩 Topic** — similar answers (e.g. everything about deployments, or meetings) are clustered together so you can discuss them in one go. Grouping is automatic and approximate, so you can **rename** a topic, **move** an answer to another (or a new) topic, or click **Regroup** to start over. Everyone's screen follows your choice.
 - As host, click through rooms to set a shared **highlighted room** — everyone's screen follows your pointer, so you can drive the discussion out loud (a call or same-room setup helps here).
+- Players can react to any answer (👍 🙋 ❤️ 🎉 😂 🤔) — only reactions someone has used are shown, and the ➕ button adds a new one. It's a quick way to see which items resonate most and deserve discussion time.
 - Optionally, type a short **action** against any discussed item — it's recorded and shown in the final summary as a dedicated Actions section.
 - When discussion is done, click **Start Voting**.
 
@@ -99,7 +101,7 @@ Before you land in the lobby, you write a few true facts about **yourself** (at 
 ### Joining
 
 1. Open the game link, click **Join Game**, and enter the code your host shared.
-2. Pick a display name (unique per game) and a colour (taken colours are disabled).
+2. Pick a display name (unique per game) and a colour (taken colours are disabled). If someone grabs your colour while you're still writing your hints, you're simply given the next free colour and your hints are kept — no need to start over.
 3. Write your hints as above, then you're in the lobby.
 
 ### Playing
@@ -113,7 +115,7 @@ Before you land in the lobby, you write a few true facts about **yourself** (at 
 
 ### Reflection & voting
 
-- During reflection, follow the host's shared highlight as the team discusses each answer out loud.
+- During reflection, follow the host's shared highlight as the team discusses each answer out loud, and react to answers with the buttons beneath them (click again to remove your reaction).
 - At voting, read every revealed clue carefully, then cast your one vote for who you think the imposter is. You can't change it once submitted, and the phase moves on once everyone's voted or the timer runs out.
 
 ### Leaving / rejoining

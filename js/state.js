@@ -73,6 +73,16 @@ export const PLAYABLE_TYPES = [
   'medical', 'recreation', 'cafeteria', 'engine', 'navigation', 'security', 'conference',
 ];
 
+// Reflection-phase reactions. Keys are stored in RTDB (and whitelisted in firebase.rules.json).
+export const REACTIONS = {
+  agree: { emoji: '👍', label: 'Agree' },
+  metoo: { emoji: '🙋', label: 'Me too' },
+  love: { emoji: '❤️', label: 'Love this' },
+  celebrate: { emoji: '🎉', label: 'Celebrate' },
+  funny: { emoji: '😂', label: 'Funny' },
+  think: { emoji: '🤔', label: 'Worth discussing' },
+};
+
 export const PHASE_LABELS = {
   joining: 'Lobby',
   gameplay: 'Gameplay',

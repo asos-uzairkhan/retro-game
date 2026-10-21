@@ -211,6 +211,12 @@
     <div class="card card-wide">
       <h2>🪞 Reflection</h2>
       <p class="muted">Review the sprint together. <span id="reflection-hint"></span></p>
+      <div id="reflection-toolbar" class="reflect-toolbar hidden">
+        <span class="muted">Group by:</span>
+        <button id="btn-view-type" type="button" class="btn btn-ghost btn-xs">🚪 Room type</button>
+        <button id="btn-view-topic" type="button" class="btn btn-ghost btn-xs">🧩 Topic</button>
+        <button id="btn-regroup" type="button" class="btn btn-ghost btn-xs hidden" title="Re-run the automatic topic grouping">🔄 Regroup</button>
+      </div>
       <div id="reflection-list" class="reflection-list"></div>
       <div id="reflection-admin" class="form-actions hidden">
         <button id="btn-start-voting" class="btn btn-primary btn-big">Start Voting 🗳️</button>

@@ -1,13 +1,14 @@
 // Reflection review, voting + timer, reveal animation, end summary & export.
 import {
-  state, now, isAdmin, ROOM_TYPES, COLORS,
+  state, now, isAdmin, ROOM_TYPES, COLORS, REACTIONS,
 } from './state.js';
 import {
   db, ref, get, set, update, runTransaction, serverTimestamp,
 } from './firebase.js';
 import {
-  escapeHtml, confirmDialog, toast, crewChipHTML,
+  escapeHtml, confirmDialog, toast, crewChipHTML, openModal, closeModal,
 } from './ui.js';
+import { groupByTopic } from './topics.js';
 import { sfx } from './sound.js';
 
 /* ===== Secrets (fetched only at the phase where they're needed) ===== */
@@ -63,8 +64,65 @@ export function computeResult() {
 /* ===== Reflection ===== */
 
 let lastHighlight = null;
+let lastReflectSig = null;
 // Only the host can record actions; { roomId, draft } while an inline editor is open.
 let editingAction = null;
+
+const OTHER_TOPIC_KEY = 'unsorted';
+
+function reactionList(room) {
+  const byKey = {};
+  for (const [uid, mine] of Object.entries(room.reactions || {})) {
+    if (!state.players?.[uid]) continue;
+    for (const [key, on] of Object.entries(mine || {})) {
+      if (on && REACTIONS[key]) (byKey[key] ||= []).push(uid);
+    }
+  }
+  return Object.entries(REACTIONS).map(([key, meta]) => ({
+    key, ...meta, uids: byKey[key] || [],
+  }));
+}
+
+// Room whose "add reaction" picker is open (local to this client).
+let openPicker = null;
+
+// Only reactions with at least one vote are shown; a "+" button opens a picker
+// containing the rest so players can start a new reaction.
+function reactionButtonsHTML(roomId) {
+  const all = reactionList(state.rooms?.[roomId] || {});
+  const chips = all.filter((r) => r.uids.length).map((r) => {
+    const names = r.uids.map((u) => state.players[u].name).join(', ');
+    return `<button type="button" class="reaction-btn ${r.uids.includes(state.uid) ? 'mine' : ''}" data-react="${r.key}" title="${escapeHtml(`${r.label}: ${names}`)}">${r.emoji} <span>${r.uids.length}</span></button>`;
+  }).join('');
+  const unused = all.filter((r) => !r.uids.length);
+  if (!unused.length) return chips;
+  const picking = openPicker === roomId;
+  const picker = picking
+    ? unused.map((r) => `<button type="button" class="reaction-btn reaction-pick" data-react="${r.key}" title="${escapeHtml(r.label)}">${r.emoji}</button>`).join('')
+    : '';
+  return `${chips}<button type="button" class="reaction-btn reaction-add ${picking ? 'open' : ''}" title="Add a reaction">${picking ? '✕' : '➕'}</button>${picker}`;
+}
+
+function refreshReactions(roomId) {
+  const el = document.querySelector(`#reflection-list .reflect-item[data-room="${roomId}"] .reflect-reactions`);
+  if (el) el.innerHTML = reactionButtonsHTML(roomId);
+}
+
+function reactionSummary(room) {
+  return reactionList(room).filter((r) => r.uids.length);
+}
+
+async function toggleReaction(roomId, key) {
+  const mine = !!state.rooms?.[roomId]?.reactions?.[state.uid]?.[key];
+  sfx.click();
+  openPicker = null;
+  try {
+    await set(ref(db, `games/${state.code}/rooms/${roomId}/reactions/${state.uid}/${key}`), mine ? null : true);
+  } catch (e) {
+    sfx.error();
+    toast(`Could not react: ${escapeHtml(e.message)}`, 'error');
+  }
+}
 
 function actionBlockHTML(r, admin) {
   if (editingAction?.roomId === r.id) {
@@ -87,30 +145,253 @@ function actionBlockHTML(r, admin) {
   return r.action ? `<div class="reflect-action"><p class="reflect-action-text">🎯 <b>Action:</b> ${escapeHtml(r.action)}</p></div>` : '';
 }
 
+/* --- Layout: room-type view vs. topic view --- */
+
+function solvedRoomsFlat() {
+  return solvedRoomsGrouped().flatMap((g) => g.rooms);
+}
+
+// Stored topics (host-synced) merged with the live solved rooms; anything not in a
+// stored topic lands in a render-only "Unsorted" group so no answer is ever hidden.
+function topicLayout() {
+  const solved = solvedRoomsFlat();
+  const byId = new Map(solved.map((r) => [r.id, r]));
+  const placed = new Set();
+  const groups = Object.entries(state.meta.topicGroups || {})
+    .sort(([, a], [, b]) => (a.order ?? 0) - (b.order ?? 0))
+    .map(([key, g]) => {
+      const rooms = Object.keys(g.rooms || {}).filter((id) => byId.has(id) && !placed.has(id)).map((id) => byId.get(id));
+      rooms.forEach((r) => placed.add(r.id));
+      return { key, title: `🧩 ${g.label}`, label: g.label, rooms };
+    })
+    .filter((g) => g.rooms.length);
+  const loose = solved.filter((r) => !placed.has(r.id));
+  if (loose.length) groups.push({ key: OTHER_TOPIC_KEY, title: '🧩 Unsorted', label: 'Unsorted', rooms: loose });
+  return groups;
+}
+
+function reflectionLayout() {
+  if (state.meta.reflectionView === 'topic') return { view: 'topic', groups: topicLayout() };
+  return {
+    view: 'type',
+    groups: solvedRoomsGrouped().map((g) => ({
+      key: g.type, title: `${g.icon} ${g.name}`, sub: g.category, rooms: g.rooms,
+    })),
+  };
+}
+
+function reflectItemHTML(r, { admin, view, groups, groupKey }) {
+  const room = ROOM_TYPES[r.type];
+  const moveOptions = groups
+    .filter((g) => g.key !== groupKey)
+    .map((g) => `<option value="${escapeHtml(g.key)}">${escapeHtml(g.label)}</option>`).join('');
+  return `
+    <div class="reflect-item ${admin ? 'admin-clickable' : ''} ${state.meta.highlightedRoom === r.id ? 'highlighted' : ''}" data-room="${r.id}">
+      ${view === 'topic' ? `<span class="reflect-chip">${room.icon} ${escapeHtml(room.category)}</span>` : ''}
+      <p class="reflect-q">${escapeHtml(r.question)}</p>
+      <p class="reflect-a">${escapeHtml(r.answer)}</p>
+      <p class="reflect-by">${solverChip(r.solvedBy)}</p>
+      <div class="reflect-reactions">${reactionButtonsHTML(r.id)}</div>
+      ${admin && view === 'topic' ? `
+        <select class="reflect-move" title="Move to another topic">
+          <option value="">Move to…</option>${moveOptions}<option value="__new">➕ New topic…</option>
+        </select>` : ''}
+      ${actionBlockHTML(r, admin)}
+    </div>`;
+}
+
+function reflectGroupHTML(g, ctx) {
+  const count = `${g.rooms.length} item${g.rooms.length === 1 ? '' : 's'}`;
+  const renameBtn = ctx.admin && ctx.view === 'topic' && g.key !== OTHER_TOPIC_KEY
+    ? ` <button type="button" class="btn btn-ghost btn-xs reflect-rename" data-group="${escapeHtml(g.key)}" title="Rename topic">✏️</button>` : '';
+  return `
+    <div class="reflect-group">
+      <h3>${escapeHtml(g.title)} <span class="reflect-cat">${g.sub ? `${escapeHtml(g.sub)} · ` : ''}${count}</span>${renameBtn}</h3>
+      ${g.rooms.map((r) => reflectItemHTML(r, { ...ctx, groupKey: g.key })).join('')}
+    </div>`;
+}
+
+/* --- Host actions for topic grouping --- */
+
+function nameTopicModal(title, initial) {
+  return new Promise((resolve) => {
+    const overlay = openModal(`
+      <h3>${escapeHtml(title)}</h3>
+      <form id="topic-name-form">
+        <input id="topic-name-input" type="text" maxlength="40" value="${escapeHtml(initial)}" autocomplete="off">
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" data-act="cancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>`, { dismissable: false });
+    const input = overlay.querySelector('#topic-name-input');
+    input.focus();
+    input.select();
+    overlay.querySelector('[data-act=cancel]').onclick = () => { sfx.click(); closeModal(); resolve(null); };
+    overlay.querySelector('#topic-name-form').onsubmit = (e) => {
+      e.preventDefault();
+      const v = input.value.trim();
+      if (!v) return;
+      closeModal();
+      resolve(v);
+    };
+  });
+}
+
+async function runTopicGrouping({ andSwitch }) {
+  const items = solvedRoomsFlat().map((r) => ({ id: r.id, text: r.answer }));
+  const topicGroups = {};
+  groupByTopic(items).forEach((t, i) => {
+    topicGroups[`t${i}`] = {
+      label: t.label,
+      order: i,
+      rooms: Object.fromEntries(t.ids.map((id) => [id, true])),
+    };
+  });
+  const updates = { topicGroups };
+  if (andSwitch) updates.reflectionView = 'topic';
+  await update(ref(db, `games/${state.code}/meta`), updates);
+}
+
+async function setReflectionView(view) {
+  sfx.click();
+  try {
+    if (view === 'topic' && !state.meta.topicGroups) await runTopicGrouping({ andSwitch: true });
+    else await update(ref(db, `games/${state.code}/meta`), { reflectionView: view });
+  } catch (e) {
+    sfx.error();
+    toast(`Could not change view: ${escapeHtml(e.message)}`, 'error');
+  }
+}
+
+async function regroupTopics() {
+  sfx.click();
+  const ok = await confirmDialog(
+    'Regroup by topic?',
+    'Answers will be re-clustered automatically. Any topics you renamed or answers you moved will be reset.',
+    'Regroup',
+  );
+  if (!ok) return;
+  try {
+    await runTopicGrouping({ andSwitch: true });
+  } catch (e) {
+    sfx.error();
+    toast(`Could not regroup: ${escapeHtml(e.message)}`, 'error');
+  }
+}
+
+async function renameTopic(key) {
+  const current = state.meta.topicGroups?.[key]?.label || '';
+  const label = await nameTopicModal('Rename topic', current);
+  if (!label) return;
+  await update(ref(db, `games/${state.code}/meta/topicGroups/${key}`), { label });
+}
+
+async function moveToTopic(roomId, targetKey) {
+  const layout = topicLayout();
+  const from = layout.find((g) => g.rooms.some((r) => r.id === roomId));
+  const updates = {};
+  if (from && from.key !== OTHER_TOPIC_KEY) updates[`topicGroups/${from.key}/rooms/${roomId}`] = null;
+
+  let target = targetKey;
+  if (targetKey === '__new') {
+    const label = await nameTopicModal('New topic name', '');
+    if (!label) { lastReflectSig = null; renderReflection(); return; }
+    const stored = state.meta.topicGroups || {};
+    const nextOrder = Math.max(-1, ...Object.values(stored).map((g) => g.order ?? 0)) + 1;
+    target = `t${Date.now().toString(36)}`;
+    updates[`topicGroups/${target}/label`] = label;
+    updates[`topicGroups/${target}/order`] = nextOrder;
+  }
+  if (target !== OTHER_TOPIC_KEY) updates[`topicGroups/${target}/rooms/${roomId}`] = true;
+  await update(ref(db, `games/${state.code}/meta`), updates);
+}
+
+/* --- Rendering --- */
+
+function renderReflectionToolbar(admin, view) {
+  const bar = document.getElementById('reflection-toolbar');
+  bar.classList.toggle('hidden', !admin);
+  if (!admin) return;
+  document.getElementById('btn-view-type').classList.toggle('active', view === 'type');
+  document.getElementById('btn-view-topic').classList.toggle('active', view === 'topic');
+  document.getElementById('btn-regroup').classList.toggle('hidden', view !== 'topic');
+}
+
+export function initReflection() {
+  document.getElementById('btn-view-type').onclick = () => setReflectionView('type');
+  document.getElementById('btn-view-topic').onclick = () => setReflectionView('topic');
+  document.getElementById('btn-regroup').onclick = regroupTopics;
+
+  const container = document.getElementById('reflection-list');
+  container.addEventListener('click', (e) => {
+    const add = e.target.closest('.reaction-add');
+    if (add) {
+      e.stopPropagation();
+      const roomId = add.closest('.reflect-item').dataset.room;
+      const prev = openPicker;
+      openPicker = prev === roomId ? null : roomId;
+      sfx.click();
+      if (prev && prev !== roomId) refreshReactions(prev);
+      refreshReactions(roomId);
+      return;
+    }
+    const react = e.target.closest('.reaction-btn');
+    if (react) {
+      const roomId = react.closest('.reflect-item').dataset.room;
+      toggleReaction(roomId, react.dataset.react);
+      refreshReactions(roomId);
+      return;
+    }
+    const rename = e.target.closest('.reflect-rename');
+    if (rename) {
+      e.stopPropagation();
+      renameTopic(rename.dataset.group).catch((err) => toast(escapeHtml(err.message), 'error'));
+    }
+  });
+  container.addEventListener('change', (e) => {
+    const sel = e.target.closest('.reflect-move');
+    if (!sel || !sel.value) return;
+    moveToTopic(sel.closest('.reflect-item').dataset.room, sel.value)
+      .catch((err) => toast(`Could not move: ${escapeHtml(err.message)}`, 'error'));
+  });
+}
+
 export function renderReflection() {
   const container = document.getElementById('reflection-list');
   const admin = isAdmin();
-  document.getElementById('reflection-hint').textContent = admin
-    ? 'Click an item to highlight it on every screen. Record an action against anything that needs follow-up.'
-    : 'The host controls the shared highlight.';
+  const { view, groups } = reflectionLayout();
 
-  const groups = solvedRoomsGrouped();
-  container.innerHTML = groups.length ? groups.map((g) => `
-    <div class="reflect-group">
-      <h3>${g.icon} ${g.name} <span class="reflect-cat">${escapeHtml(g.category)}</span></h3>
-      ${g.rooms.map((r) => `
-        <div class="reflect-item ${admin ? 'admin-clickable' : ''} ${state.meta.highlightedRoom === r.id ? 'highlighted' : ''}" data-room="${r.id}">
-          <p class="reflect-q">${escapeHtml(r.question)}</p>
-          <p class="reflect-a">${escapeHtml(r.answer)}</p>
-          <p class="reflect-by">${solverChip(r.solvedBy)}</p>
-          ${actionBlockHTML(r, admin)}
-        </div>`).join('')}
-    </div>`).join('') : '<p class="muted">No rooms were solved. A quiet sprint indeed…</p>';
+  document.getElementById('reflection-hint').textContent = admin
+    ? 'Click an item to highlight it on every screen. React to answers below; record an action against anything that needs follow-up.'
+    : 'The host controls the shared highlight. React to any answer with the buttons below it.';
+  renderReflectionToolbar(admin, view);
+  document.getElementById('reflection-admin').classList.toggle('hidden', !admin);
+
+  // Reactions and presence change often. Only rebuild the list when its structure
+  // changes (so the host's open editor/dropdown isn't clobbered); otherwise just
+  // refresh the reaction bars in place.
+  const sig = JSON.stringify([
+    admin, view, state.meta.highlightedRoom, editingAction?.roomId ?? null,
+    groups.map((g) => [g.key, g.title, g.rooms.map((r) => [r.id, r.answer, r.solvedBy, r.action || ''])]),
+  ]);
+  if (sig === lastReflectSig) {
+    container.querySelectorAll('.reflect-item').forEach((el) => {
+      el.querySelector('.reflect-reactions').innerHTML = reactionButtonsHTML(el.dataset.room);
+    });
+    return;
+  }
+  lastReflectSig = sig;
+
+  const ctx = { admin, view, groups };
+  container.innerHTML = groups.length
+    ? groups.map((g) => reflectGroupHTML(g, ctx)).join('')
+    : '<p class="muted">No rooms were solved. A quiet sprint indeed…</p>';
 
   if (admin) {
     container.querySelectorAll('.reflect-item').forEach((el) => {
       el.onclick = (e) => {
-        if (e.target.closest('.reflect-action')) return;
+        if (e.target.closest('.reflect-action, .reflect-reactions, .reflect-move')) return;
         sfx.click();
         update(ref(db, `games/${state.code}/meta`), { highlightedRoom: el.dataset.room });
       };
@@ -136,7 +417,6 @@ export function renderReflection() {
       btn.onclick = (e) => { e.stopPropagation(); editingAction = null; renderReflection(); };
     });
   }
-  document.getElementById('reflection-admin').classList.toggle('hidden', !admin);
 
   const hl = state.meta.highlightedRoom;
   if (hl && hl !== lastHighlight) {
@@ -423,6 +703,7 @@ export async function renderSummary() {
           <p class="reflect-q">${escapeHtml(r.question)}</p>
           <p class="reflect-a">${escapeHtml(r.answer)}</p>
           <p class="reflect-by">${solverChip(r.solvedBy)}</p>
+          ${reactionSummary(r).length ? `<p class="reflect-reactions-static">${reactionSummary(r).map((x) => `<span class="reaction-tally" title="${escapeHtml(x.label)}">${x.emoji} ${x.uids.length}</span>`).join(' ')}</p>` : ''}
           ${r.action ? `<p class="reflect-action-text">🎯 <b>Action:</b> ${escapeHtml(r.action)}</p>` : ''}
         </div>`).join('')}
     `).join('') || '<p class="muted">No rooms were solved.</p>'}
@@ -477,6 +758,8 @@ export function buildMarkdownSummary() {
       const solver = state.players?.[r.solvedBy]?.name || '?';
       lines.push(`**Q:** ${r.question}`, '');
       lines.push(`**A:** ${r.answer} *(— ${solver})*`, '');
+      const reacts = reactionSummary(r);
+      if (reacts.length) lines.push(`**Reactions:** ${reacts.map((x) => `${x.emoji} ${x.uids.length}`).join('  ')}`, '');
     }
   }
   lines.push('');
@@ -499,5 +782,7 @@ export function resetPhaseLocals() {
   resultSoundPlayed = false;
   revealSoundPlayed = false;
   lastHighlight = null;
+  lastReflectSig = null;
+  openPicker = null;
   editingAction = null;
 }

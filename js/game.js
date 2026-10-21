@@ -63,6 +63,9 @@ export async function lookupGame(code) {
   return snap.exists() ? snap.val() : null;
 }
 
+// Returns the colour the player actually ended up with. If their chosen colour was
+// taken while they were writing hints, they're given the first free one instead of
+// being bounced back (which used to force them to re-enter their hints).
 export async function joinGame(code, name, color, hints, optedOut) {
   const user = await signIn();
   state.uid = user.uid;
@@ -73,14 +76,16 @@ export async function joinGame(code, name, color, hints, optedOut) {
   // ever touches this player's own path.
   const existingSnap = await get(ref(db, `games/${code}/players`));
   const players = existingSnap.val() || {};
+  let finalColor = color;
   if (!players[state.uid]) {
-    if (Object.keys(players).length >= 15) {
-      throw new Error('Name or colour already taken (or the game is full) — try another.');
-    }
-    for (const p of Object.values(players)) {
-      if (p.name.trim().toLowerCase() === name.trim().toLowerCase() || p.color === color) {
-        throw new Error('Name or colour already taken (or the game is full) — try another.');
-      }
+    if (Object.keys(players).length >= 15) throw new Error('This game is full.');
+    const takenNames = Object.values(players).map((p) => p.name.trim().toLowerCase());
+    if (takenNames.includes(name.trim().toLowerCase())) throw new Error('That name is already taken.');
+
+    const takenColors = new Set(Object.values(players).map((p) => p.color));
+    if (takenColors.has(finalColor)) {
+      finalColor = Object.keys(COLORS).find((c) => !takenColors.has(c));
+      if (!finalColor) throw new Error('This game is full — no colours left.');
     }
   }
 
@@ -88,7 +93,7 @@ export async function joinGame(code, name, color, hints, optedOut) {
     if (existing) return existing; // already joined — no-op commit
     return {
       name,
-      color,
+      color: finalColor,
       isAdmin: false,
       online: true,
       location: 'start',
@@ -96,9 +101,8 @@ export async function joinGame(code, name, color, hints, optedOut) {
       optedOut: !!optedOut,
     };
   });
-  if (!res.committed) {
-    throw new Error('Name or colour already taken (or the game is full) — try another.');
-  }
+  if (!res.committed) throw new Error('Could not join the game — please try again.');
+  return finalColor;
 }
 
 export async function kickPlayer(uid) {
