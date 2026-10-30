@@ -1,4 +1,4 @@
-# Data-Tech Among Us Retro
+# Data & AI Among Us Retro
 
 A sprint retrospective disguised as a cooperative, Among Us–inspired browser game. Instead of a shared doc with sticky-note columns, your team explores a spaceship map, unlocks rooms by answering retro questions, hunts for hidden clues, and ends by voting out the "imposter" — a real teammate picked at random, not told to anyone in advance (including the host).
 

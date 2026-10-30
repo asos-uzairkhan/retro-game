@@ -1,4 +1,4 @@
-# Data-Tech Among Us Retro — Design Document
+# Data & AI Among Us Retro — Design Document
 
 A team retrospective run as a cooperative, Among Us–inspired browser game. Players explore a spaceship grid map, answer retro questions to unlock rooms, collect hidden clues, and finally vote on which crewmate is the "imposter".
 
@@ -8,7 +8,7 @@ A team retrospective run as a cooperative, Among Us–inspired browser game. Pla
 
 | Item | Decision |
 |---|---|
-| Game name | Data-Tech Among Us Retro |
+| Game name | Data & AI Among Us Retro |
 | Hosting | GitHub Pages (static site) |
 | Frontend | Vanilla HTML / CSS / JavaScript (ES modules, no build step) |
 | Backend | Google Firebase **Realtime Database** (RTDB) for all state and sync |

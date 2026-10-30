@@ -1,5 +1,5 @@
 // Game lifecycle: create, join, lobby, phase transitions, presence.
-import { state, isAdmin, COLORS } from './state.js';
+import { state, now, isAdmin, COLORS } from './state.js';
 import {
   db, ref, get, set, update, remove, onValue,
   runTransaction, onDisconnect, serverTimestamp, signIn,
@@ -39,6 +39,7 @@ export async function createGame(cfg) {
       phaseStartedAt: serverTimestamp(),
       gridSize: cfg.gridSize,
       voteTimerSec: cfg.voteTimerSec,
+      gameplayTimerMin: cfg.gameplayTimerMin,
       minHints: cfg.minHints,
     },
     players: {
@@ -48,14 +49,22 @@ export async function createGame(cfg) {
         isAdmin: true,
         online: true,
         location: 'start',
-        hints: cfg.optedOut ? [] : cfg.hints,
-        optedOut: !!cfg.optedOut,
+        // Host writes hints after the game exists so the crew can join meanwhile.
+        hintsPending: true,
       },
     },
     rooms,
   };
   await set(ref(db, `games/${code}`), game);
   return code;
+}
+
+export async function finishHostHints(hints, optedOut) {
+  await update(ref(db, `games/${state.code}/players/${state.uid}`), {
+    hints: optedOut ? [] : hints,
+    optedOut: !!optedOut,
+    hintsPending: null,
+  });
 }
 
 export async function lookupGame(code) {
@@ -176,6 +185,7 @@ export async function startGameplay() {
     'meta/phase': 'gameplay',
     'meta/phaseStartedAt': serverTimestamp(),
     'meta/hintCount': scattered.length,
+    'meta/gameplayExtraSec': 0,
     'secrets/imposterUid': imposterUid,
     'secrets/hints': hints,
   };
@@ -184,6 +194,93 @@ export async function startGameplay() {
   scattered.forEach((id, i) => { updates[`rooms/${id}/hintIndex`] = i; });
 
   await update(ref(db, `games/${state.code}`), updates);
+}
+
+/* ===== Gameplay timer (optional; meta.gameplayTimerMin = -1 means none) ===== */
+
+const ADD_TIME_OPTIONS = [1, 2, 5, 10];
+let gameTickInterval = null;
+let lastGameTickSec = null;
+let timeUpShownFor = null; // null = banner hidden, otherwise 'host' | 'player'
+
+export function gameplayDeadline() {
+  const m = state.meta;
+  if (!m || !(m.gameplayTimerMin > 0) || !m.phaseStartedAt) return null;
+  return m.phaseStartedAt + (m.gameplayTimerMin * 60 + (m.gameplayExtraSec || 0)) * 1000;
+}
+
+async function addGameplayTime(minutes) {
+  const m = state.meta;
+  const base = m.gameplayTimerMin * 60;
+  const elapsed = Math.ceil((now() - m.phaseStartedAt) / 1000);
+  // Measured from the later of the old deadline and now, so late clicks still grant the full amount.
+  const extra = Math.max((m.gameplayExtraSec || 0), elapsed - base) + minutes * 60;
+  await update(ref(db, `games/${state.code}/meta`), { gameplayExtraSec: extra });
+  sfx.pop();
+  toast(`⏱ Added ${minutes} minute${minutes === 1 ? '' : 's'}!`, 'success');
+}
+
+function renderTimeUp(up) {
+  const banner = document.getElementById('timer-up-banner');
+  const kind = up ? (isAdmin() ? 'host' : 'player') : null;
+  if (kind === timeUpShownFor) return;
+  timeUpShownFor = kind;
+  banner.classList.toggle('hidden', !kind);
+  if (!kind) return;
+  sfx.timeUp();
+  banner.innerHTML = kind === 'host'
+    ? `<div>⏰ Time's up! Add more time or move on.</div>
+       <div class="timer-up-actions">
+         ${ADD_TIME_OPTIONS.map((m) => `<button type="button" class="btn btn-secondary btn-xs" data-add="${m}">+${m} min</button>`).join('')}
+         <button type="button" class="btn btn-primary btn-xs" data-act="next">Move to Reflection ▶</button>
+       </div>`
+    : "<div>⏰ Time's up! Waiting for the host to add time or move on…</div>";
+}
+
+function gameTick() {
+  const hud = document.getElementById('hud-timer');
+  const deadline = state.meta?.phase === 'gameplay' ? gameplayDeadline() : null;
+  if (deadline === null) {
+    hud.classList.add('hidden');
+    renderTimeUp(false);
+    return;
+  }
+  const remain = Math.max(0, deadline - now());
+  const secs = Math.ceil(remain / 1000);
+  hud.classList.remove('hidden');
+  hud.textContent = `⏱ ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+  hud.classList.toggle('hud-timer-low', secs <= 60);
+  if (secs <= 10 && secs > 0 && secs !== lastGameTickSec) {
+    lastGameTickSec = secs;
+    sfx.tick();
+  }
+  renderTimeUp(remain <= 0);
+}
+
+export function startGameTicker() {
+  if (gameTickInterval) return;
+  document.getElementById('timer-up-banner').onclick = async (e) => {
+    const btn = e.target.closest('button');
+    if (!btn || !isAdmin()) return;
+    try {
+      if (btn.dataset.add) await addGameplayTime(Number(btn.dataset.add));
+      else if (btn.dataset.act === 'next') { sfx.click(); await setPhase('reflection'); }
+    } catch (err) {
+      sfx.error();
+      toast(`Could not update the timer: ${escapeHtml(err.message)}`, 'error');
+    }
+  };
+  gameTickInterval = setInterval(gameTick, 250);
+  gameTick();
+}
+
+export function stopGameTicker() {
+  clearInterval(gameTickInterval);
+  gameTickInterval = null;
+  lastGameTickSec = null;
+  timeUpShownFor = null;
+  document.getElementById('hud-timer').classList.add('hidden');
+  document.getElementById('timer-up-banner').classList.add('hidden');
 }
 
 /* ===== Presence ===== */
@@ -204,19 +301,32 @@ export function setupPresence() {
 
 /* ===== Lobby rendering ===== */
 
+function crewListHTML(players, { kick }) {
+  return players.map(([uid, p]) => `
+    <li class="lobby-player ${p.online ? '' : 'offline'}">
+      <span class="crewmate" style="--c:${COLORS[p.color] || '#888'}"></span>
+      <span class="lp-name">${escapeHtml(p.name)}${p.isAdmin ? ' <span class="badge">HOST</span>' : ''}</span>
+      ${p.hintsPending ? '<span class="offline-dot">✍️ writing hints…</span>' : ''}
+      ${p.online ? '' : '<span class="offline-dot">offline</span>'}
+      ${kick && uid !== state.uid ? `<button class="btn-kick" data-uid="${uid}" title="Kick player">✕</button>` : ''}
+    </li>`).join('');
+}
+
+// Live crew roster shown to the host while they're still writing their hints.
+export function renderHintsCrew() {
+  const players = Object.entries(state.players || {});
+  document.getElementById('hints-code').textContent = state.code;
+  document.getElementById('hints-crew-count').textContent = `${players.length} / 15 crew aboard`;
+  document.getElementById('hints-crew').innerHTML = crewListHTML(players, { kick: false });
+}
+
 export function renderLobby() {
   document.getElementById('lobby-code').textContent = state.code;
   const players = Object.entries(state.players || {});
   document.getElementById('lobby-count').textContent = `${players.length} / 15 crew aboard`;
 
   const list = document.getElementById('lobby-players');
-  list.innerHTML = players.map(([uid, p]) => `
-    <li class="lobby-player ${p.online ? '' : 'offline'}">
-      <span class="crewmate" style="--c:${COLORS[p.color] || '#888'}"></span>
-      <span class="lp-name">${escapeHtml(p.name)}${p.isAdmin ? ' <span class="badge">HOST</span>' : ''}</span>
-      ${p.online ? '' : '<span class="offline-dot">offline</span>'}
-      ${isAdmin() && uid !== state.uid ? `<button class="btn-kick" data-uid="${uid}" title="Kick player">✕</button>` : ''}
-    </li>`).join('');
+  list.innerHTML = crewListHTML(players, { kick: isAdmin() });
 
   list.querySelectorAll('.btn-kick').forEach((b) => {
     b.onclick = async () => {

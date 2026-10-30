@@ -9,6 +9,7 @@ import {
   escapeHtml, confirmDialog, toast, crewChipHTML, openModal, closeModal,
 } from './ui.js';
 import { groupByTopic } from './topics.js';
+import { playEjection } from './ejection.js';
 import { sfx } from './sound.js';
 
 /* ===== Secrets (fetched only at the phase where they're needed) ===== */
@@ -206,9 +207,82 @@ function reflectGroupHTML(g, ctx) {
     ? ` <button type="button" class="btn btn-ghost btn-xs reflect-rename" data-group="${escapeHtml(g.key)}" title="Rename topic">✏️</button>` : '';
   return `
     <div class="reflect-group">
-      <h3>${escapeHtml(g.title)} <span class="reflect-cat">${g.sub ? `${escapeHtml(g.sub)} · ` : ''}${count}</span>${renameBtn}</h3>
+      <div class="reflect-group-head">
+        <h3>${escapeHtml(g.title)} <span class="reflect-cat">${g.sub ? `${escapeHtml(g.sub)} · ` : ''}${count}</span>${renameBtn}</h3>
+        <div class="group-vote" data-group="${escapeHtml(g.key)}">${groupVoteHTML(g.key)}</div>
+      </div>
       ${g.rooms.map((r) => reflectItemHTML(r, { ...ctx, groupKey: g.key })).join('')}
     </div>`;
+}
+
+/* --- Voting on groups: each player can vote for any number of groups --- */
+
+// Keys of the groups currently on screen; votes for groups that no longer exist are ignored.
+let currentGroupKeys = new Set();
+
+function voteTallies(keys = currentGroupKeys) {
+  const totals = {};
+  const mine = {};
+  for (const [uid, byGroup] of Object.entries(state.groupVotes || {})) {
+    if (!state.players?.[uid]) continue;
+    for (const [key, on] of Object.entries(byGroup || {})) {
+      if (!keys.has(key) || !on) continue;
+      totals[key] = (totals[key] || 0) + 1;
+      if (uid === state.uid) mine[key] = true;
+    }
+  }
+  return { totals, mine };
+}
+
+function groupVoteHTML(key) {
+  const { totals, mine } = voteTallies();
+  return `<button type="button" class="btn btn-ghost btn-xs gv-toggle ${mine[key] ? 'mine' : ''}" aria-pressed="${!!mine[key]}" title="${mine[key] ? 'Remove your vote' : 'Vote to discuss this group'}">🗳️ ${totals[key] || 0}</button>`;
+}
+
+function rankedGroups(groups, keys) {
+  const { totals } = voteTallies(keys);
+  return {
+    totals,
+    ranked: groups.filter((g) => totals[g.key]).sort((a, b) => totals[b.key] - totals[a.key]),
+  };
+}
+
+function refreshGroupVotes(groups) {
+  document.querySelectorAll('#reflection-list .group-vote').forEach((el) => {
+    el.innerHTML = groupVoteHTML(el.dataset.group);
+  });
+  const panel = document.getElementById('reflection-priorities');
+  if (!groups.length) { panel.innerHTML = ''; return; }
+  const { totals, ranked } = rankedGroups(groups, currentGroupKeys);
+  const max = ranked.length ? totals[ranked[0].key] : 1;
+  panel.innerHTML = `
+    <div class="prio-head"><b>🗳️ Vote on what to discuss</b></div>
+    <p class="muted prio-help">Press the vote button on any group you want to discuss — vote for as many as you like. The most-voted areas rise to the top here.</p>
+    ${ranked.length ? `<ol class="prio-list">${ranked.map((g, i) => `
+      <li class="prio-item">
+        <span class="prio-rank">${i + 1}</span>
+        <span class="prio-title">${escapeHtml(g.title)}</span>
+        <span class="prio-bar"><i style="width:${(totals[g.key] / max) * 100}%"></i></span>
+        <span class="prio-count">${totals[g.key]}</span>
+      </li>`).join('')}</ol>` : '<p class="muted">No votes yet.</p>'}`;
+}
+
+async function castGroupVote(key) {
+  const { mine } = voteTallies();
+  sfx.click();
+  try {
+    await set(ref(db, `games/${state.code}/groupVotes/${state.uid}/${key}`), mine[key] ? null : true);
+  } catch (e) {
+    sfx.error();
+    toast(`Could not vote: ${escapeHtml(e.message)}`, 'error');
+  }
+}
+
+// Ranked groups with at least one vote, for the summary and Markdown export.
+function discussionPriorities() {
+  const { groups } = reflectionLayout();
+  const { totals, ranked } = rankedGroups(groups, new Set(groups.map((g) => g.key)));
+  return ranked.map((g) => ({ title: g.title, votes: totals[g.key] }));
 }
 
 /* --- Host actions for topic grouping --- */
@@ -241,8 +315,10 @@ function nameTopicModal(title, initial) {
 async function runTopicGrouping({ andSwitch }) {
   const items = solvedRoomsFlat().map((r) => ({ id: r.id, text: r.answer }));
   const topicGroups = {};
+  const stamp = Date.now().toString(36);
   groupByTopic(items).forEach((t, i) => {
-    topicGroups[`t${i}`] = {
+    // Fresh keys on every run so votes cast on a previous grouping can't attach to new topics.
+    topicGroups[`t${stamp}${i}`] = {
       label: t.label,
       order: i,
       rooms: Object.fromEntries(t.ids.map((id) => [id, true])),
@@ -325,6 +401,11 @@ export function initReflection() {
 
   const container = document.getElementById('reflection-list');
   container.addEventListener('click', (e) => {
+    const gv = e.target.closest('.gv-toggle');
+    if (gv) {
+      castGroupVote(gv.closest('.group-vote').dataset.group);
+      return;
+    }
     const add = e.target.closest('.reaction-add');
     if (add) {
       e.stopPropagation();
@@ -361,10 +442,11 @@ export function renderReflection() {
   const container = document.getElementById('reflection-list');
   const admin = isAdmin();
   const { view, groups } = reflectionLayout();
+  currentGroupKeys = new Set(groups.map((g) => g.key));
 
   document.getElementById('reflection-hint').textContent = admin
-    ? 'Click an item to highlight it on every screen. React to answers below; record an action against anything that needs follow-up.'
-    : 'The host controls the shared highlight. React to any answer with the buttons below it.';
+    ? 'Click an item to highlight it on every screen. React to answers below, vote for the groups most worth discussing, and record an action against anything that needs follow-up.'
+    : 'The host controls the shared highlight. React to any answer, and vote for the groups most worth discussing.';
   renderReflectionToolbar(admin, view);
   document.getElementById('reflection-admin').classList.toggle('hidden', !admin);
 
@@ -379,6 +461,7 @@ export function renderReflection() {
     container.querySelectorAll('.reflect-item').forEach((el) => {
       el.querySelector('.reflect-reactions').innerHTML = reactionButtonsHTML(el.dataset.room);
     });
+    refreshGroupVotes(groups);
     return;
   }
   lastReflectSig = sig;
@@ -387,6 +470,7 @@ export function renderReflection() {
   container.innerHTML = groups.length
     ? groups.map((g) => reflectGroupHTML(g, ctx)).join('')
     : '<p class="muted">No rooms were solved. A quiet sprint indeed…</p>';
+  refreshGroupVotes(groups);
 
   if (admin) {
     container.querySelectorAll('.reflect-item').forEach((el) => {
@@ -651,6 +735,21 @@ function startRevealCountdown(panel) {
   countdownInterval = setInterval(step, 100);
 }
 
+function ejectionCast() {
+  const { crewWins } = computeResult();
+  const players = state.players || {};
+  return {
+    crewWins,
+    imposter: players[state.imposterUid] || null,
+    crew: Object.entries(players).filter(([uid]) => uid !== state.imposterUid).map(([, p]) => p),
+  };
+}
+
+function replayEjection() {
+  sfx.click();
+  return playEjection(ejectionCast());
+}
+
 function showImposter(panel) {
   const { crewWins } = computeResult();
   const imposter = state.players?.[state.imposterUid];
@@ -659,10 +758,17 @@ function showImposter(panel) {
     <div class="imposter-name">👹 ${imposter ? crewChipHTML(imposter) : '???'}</div>
     <div class="result-banner ${crewWins ? 'result-win' : 'result-lose'}">
       ${crewWins ? '🎉 The crew was right!' : '😈 The imposter got away!'}
-    </div>`;
+    </div>
+    <button id="btn-replay-eject" type="button" class="btn btn-ghost btn-sm">🎬 Replay ejection</button>`;
+  panel.querySelector('#btn-replay-eject').onclick = replayEjection;
   if (!resultSoundPlayed) {
     resultSoundPlayed = true;
-    setTimeout(() => (crewWins ? sfx.win() : sfx.lose()), 400);
+    // Only auto-play for a live reveal, not for someone who refreshed long afterwards.
+    const live = now() - state.meta.imposterRevealedAt < 20000;
+    setTimeout(() => {
+      if (live && state.meta?.phase === 'reveal') playEjection(ejectionCast());
+      else (crewWins ? sfx.win : sfx.lose)();
+    }, live ? 1500 : 400);
   }
 }
 
@@ -687,6 +793,7 @@ export async function renderSummary() {
     </div>
     <h3>👹 The imposter</h3>
     <p>${imposter ? crewChipHTML(imposter) : '???'}</p>
+    <button id="btn-summary-replay" type="button" class="btn btn-ghost btn-sm">🎬 Replay ejection</button>
     <h3>🗳️ Vote breakdown</h3>
     <div class="reveal-tally">${tallyHTML({ markImposter: true })}</div>
     <h3>🔍 Clues</h3>
@@ -695,6 +802,14 @@ export async function renderSummary() {
         ? `<li class="clue-item">🔍 ${escapeHtml(h)}</li>`
         : `<li class="clue-item undiscovered">🚫 ${escapeHtml(h)} <small>(never discovered)</small></li>`)).join('')}
     </ul>
+    ${(() => {
+      const prio = discussionPriorities();
+      return prio.length ? `
+        <h3>🗳️ Discussion priorities</h3>
+        <ol class="prio-list">
+          ${prio.map((x, i) => `<li class="prio-item"><span class="prio-rank">${i + 1}</span><span class="prio-title">${escapeHtml(x.title)}</span><span class="prio-count">${x.votes} vote${x.votes === 1 ? '' : 's'}</span></li>`).join('')}
+        </ol>` : '';
+    })()}
     <h3>📋 Retro output</h3>
     ${groups.map((g) => `
       <h4>${g.icon} ${g.name} — ${escapeHtml(g.category)}</h4>
@@ -724,6 +839,7 @@ export async function renderSummary() {
           <span class="nums">🚪 ${solved}<br>🔍 ${clues}</span>
         </div>`).join('')}
     </div>`;
+  document.getElementById('btn-summary-replay').onclick = replayEjection;
 }
 
 export function buildMarkdownSummary() {
@@ -732,7 +848,7 @@ export function buildMarkdownSummary() {
   const votes = state.votes || {};
   const imposter = state.players?.[state.imposterUid];
   const lines = [];
-  lines.push(`# Retro Summary — Data-Tech Among Us Retro (${state.code})`, '');
+  lines.push(`# Retro Summary — Data & AI Among Us Retro (${state.code})`, '');
   lines.push(`**Result:** ${crewWins ? 'The crew found the imposter! 🎉' : 'The imposter got away… 😈'}`);
   lines.push(`**Imposter:** ${imposter?.name ?? '???'}`, '');
 
@@ -742,6 +858,15 @@ export function buildMarkdownSummary() {
       .map(([u]) => state.players?.[u]?.name || '?');
     lines.push(`- **${p.name}**: ${voters.length} vote(s)${voters.length ? ` — ${voters.join(', ')}` : ''}`);
   });
+  lines.push('');
+
+  lines.push('## Discussion priorities', '');
+  const prio = discussionPriorities();
+  if (prio.length) {
+    prio.forEach((x, i) => lines.push(`${i + 1}. ${x.title} — ${x.votes} vote${x.votes === 1 ? '' : 's'}`));
+  } else {
+    lines.push('_No votes cast._');
+  }
   lines.push('');
 
   lines.push('## Clues', '');
@@ -785,4 +910,5 @@ export function resetPhaseLocals() {
   lastReflectSig = null;
   openPicker = null;
   editingAction = null;
+  currentGroupKeys = new Set();
 }

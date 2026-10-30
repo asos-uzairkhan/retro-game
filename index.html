@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Data-Tech Among Us Retro</title>
+<title>Data & AI Among Us Retro</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛸</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -24,6 +24,7 @@
   <div class="hud-right">
     <span id="hud-rooms" class="hud-stat" title="Rooms solved"></span>
     <span id="hud-clues" class="hud-stat" title="Clues found"></span>
+    <span id="hud-timer" class="hud-stat hud-timer hidden" title="Gameplay time remaining"></span>
     <button id="btn-leave-game" class="btn-icon" title="Leave game">🚪</button>
     <button id="btn-mute" class="btn-icon" title="Toggle sound">🔊</button>
   </div>
@@ -46,7 +47,7 @@
   <section id="screen-landing" class="screen">
     <div class="landing-card">
       <div class="crew-row" id="landing-crew" aria-hidden="true"></div>
-      <h1 class="title">DATA-TECH<br><span>AMONG US RETRO</span></h1>
+      <h1 class="title">DATA &amp; AI<br><span>AMONG US RETRO</span></h1>
       <p class="subtitle">A cooperative sprint retrospective&hellip; in space 🚀</p>
       <div class="landing-buttons">
         <button id="btn-create" class="btn btn-primary btn-big">Create Game</button>
@@ -76,11 +77,14 @@
           </label>
           <label class="field">Vote timer
             <select id="setup-timer">
-              <option value="60">1 minute</option>
+              <option value="60" selected>1 minute</option>
               <option value="120">2 minutes</option>
-              <option value="180" selected>3 minutes</option>
+              <option value="180">3 minutes</option>
               <option value="300">5 minutes</option>
             </select>
+          </label>
+          <label class="field">Gameplay timer <small>(minutes; -1 = no timer)</small>
+            <input id="setup-game-timer" type="number" min="-1" max="240" step="1" value="-1">
           </label>
         </div>
 
@@ -137,6 +141,15 @@
   <section id="screen-hints" class="screen hidden">
     <div class="card card-wide">
       <h2>🕵️ Your Secret Hints</h2>
+      <div id="hints-invite" class="hints-invite hidden">
+        <p class="muted">Your game is open! Share this code so the crew can join while you write your hints:</p>
+        <div class="lobby-code-row">
+          <span id="hints-code" class="lobby-code"></span>
+          <button id="btn-copy-code-hints" type="button" class="btn btn-ghost" title="Copy code">📋 Copy</button>
+        </div>
+        <p id="hints-crew-count" class="lobby-count"></p>
+        <ul id="hints-crew" class="lobby-players"></ul>
+      </div>
       <div id="hints-entry">
         <p class="muted">Write at least <b id="hints-min-label"></b> hints about yourself (max 20), one per line. If you're picked as the imposter when the game starts, these get scattered around the map for the crew to find!</p>
         <textarea id="hints-textarea" class="hints-textarea" rows="8" placeholder="One hint per line…&#10;e.g. I once broke a keyboard during a demo&#10;I've never seen the finale of my favourite show"></textarea>
@@ -193,6 +206,7 @@
   <section id="screen-game" class="screen hidden">
     <div class="game-layout">
       <div class="board-wrap">
+        <div id="timer-up-banner" class="banner banner-warn timer-up hidden"></div>
         <div id="all-solved-banner" class="banner banner-ok hidden">🎉 All rooms complete!</div>
         <div id="board-grid" class="board-grid"></div>
       </div>
@@ -217,6 +231,7 @@
         <button id="btn-view-topic" type="button" class="btn btn-ghost btn-xs">🧩 Topic</button>
         <button id="btn-regroup" type="button" class="btn btn-ghost btn-xs hidden" title="Re-run the automatic topic grouping">🔄 Regroup</button>
       </div>
+      <div id="reflection-priorities" class="reflect-priorities"></div>
       <div id="reflection-list" class="reflection-list"></div>
       <div id="reflection-admin" class="form-actions hidden">
         <button id="btn-start-voting" class="btn btn-primary btn-big">Start Voting 🗳️</button>

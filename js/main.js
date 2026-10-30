@@ -1,6 +1,6 @@
 // Entry point: form wiring, RTDB listeners, phase routing.
 import {
-  state, isAdmin, resetGameState,
+  state, isAdmin, me, resetGameState,
   COLORS, ROOM_TYPES, PLAYABLE_TYPES, PHASE_LABELS,
 } from './state.js';
 import {
@@ -48,7 +48,8 @@ function buildColorPicker(container, { taken = [], onPick }) {
 
 let getSetupColor = () => null;
 
-const DEFAULT_TYPE_PCT = 10; // 7 types × 10% ≈ 70%, remaining 30% defaults to Storage
+const DEFAULT_TYPE_PCTS = { medical: 10, recreation: 15, conference: 10 };
+const DEFAULT_TYPE_PCT = 5; // fallback for the other types; the remainder defaults to Storage
 
 function updateTypeTotal() {
   const inputs = [...$('setup-types').querySelectorAll('.type-pct-input')];
@@ -67,7 +68,7 @@ function initSetupForm() {
     <label class="type-pct">
       <span class="type-pct-label">${ROOM_TYPES[t].icon} ${ROOM_TYPES[t].name}</span>
       <span class="type-pct-input-wrap">
-        <input type="number" class="type-pct-input" data-type="${t}" min="0" max="100" step="1" value="${DEFAULT_TYPE_PCT}">%
+        <input type="number" class="type-pct-input" data-type="${t}" min="0" max="100" step="1" value="${DEFAULT_TYPE_PCTS[t] ?? DEFAULT_TYPE_PCT}">%
       </span>
       <small>${escapeHtml(ROOM_TYPES[t].category)}</small>
     </label>`).join('');
@@ -105,17 +106,31 @@ async function onSetupSubmit(e) {
   });
   const typeTotal = updateTypeTotal();
   const minHints = Number($('setup-min-hints').value);
+  const gameplayTimerMin = Number($('setup-game-timer').value);
 
   if (!name || name.length > 20) return setupError('Please enter a name (1–20 characters).');
   if (!color) return setupError('Please pick a colour.');
   if (typeTotal > 100) return setupError('Room type percentages add up to more than 100%.');
   if (!Number.isInteger(minHints) || minHints < 1 || minHints > 20) return setupError('Minimum hints must be between 1 and 20.');
+  if (gameplayTimerMin !== -1 && (!Number.isInteger(gameplayTimerMin) || gameplayTimerMin < 1 || gameplayTimerMin > 240)) {
+    return setupError('Gameplay timer must be -1 (no timer) or between 1 and 240 minutes.');
+  }
 
-  pendingSetupCfg = {
-    name, color, gridSize, voteTimerSec, typePercents, minHints,
-  };
-  sfx.pop();
-  enterHintFlow({ mode: 'create', min: minHints });
+  // The game is created now (not after the hints) so the crew can join while the host writes theirs.
+  const submit = $('setup-form').querySelector('[type=submit]');
+  submit.disabled = true;
+  try {
+    const code = await game.createGame({
+      name, color, gridSize, voteTimerSec, gameplayTimerMin, typePercents, minHints,
+    });
+    sfx.phase();
+    attachGame(code);
+  } catch (err) {
+    setupError(`Could not create game: ${err.message}`);
+  } finally {
+    submit.disabled = false;
+  }
+  return undefined;
 }
 
 /* ================= Join flow ================= */
@@ -206,18 +221,33 @@ async function onJoinGo() {
 
 const MAX_HINTS = 20;
 
-let pendingSetupCfg = null;
 let pendingJoin = null;
 let hintFlowMode = null; // 'create' | 'join'
 let hintFlowMin = 1;
 let draftHints = [];
 let hintFlowOptedOut = false;
+// True once the host's hint screen has been set up for the current game.
+let hostHintsActive = false;
 
 function initHintsForm() {
-  $('hints-back').onclick = () => {
+  $('hints-back').onclick = async () => {
     sfx.click();
     if (hintFlowMode === 'create') {
+      const ok = await confirmDialog(
+        'Cancel game setup?',
+        'Your game will be closed and anyone who already joined will be removed.',
+        'Close game',
+      );
+      if (!ok) return;
+      const code = state.code;
+      const { uid } = state;
+      leaveToLanding(null);
       showScreen('setup');
+      try {
+        await game.leaveLobby(code, uid, true);
+      } catch (err) {
+        toast(`Could not close the game: ${escapeHtml(err.message)}`, 'warn');
+      }
     } else {
       showScreen('join');
       $('join-step2').classList.remove('hidden');
@@ -244,6 +274,7 @@ function enterHintFlow({ mode, min }) {
   // The textarea is deliberately not cleared here, so hints survive going back or a
   // failed join. It's cleared once a game is actually joined (see attachGame).
   hintsError(null);
+  $('hints-invite').classList.toggle('hidden', mode !== 'create');
   $('hints-entry').classList.remove('hidden');
   $('hints-review').classList.add('hidden');
   showScreen('hints');
@@ -300,9 +331,10 @@ async function onHintsAccept() {
   btn.disabled = true;
   try {
     if (hintFlowMode === 'create') {
-      const code = await game.createGame({ ...pendingSetupCfg, hints: draftHints, optedOut: hintFlowOptedOut });
+      await game.finishHostHints(draftHints, hintFlowOptedOut);
+      hostHintsActive = false;
+      $('hints-textarea').value = '';
       sfx.phase();
-      attachGame(code);
     } else {
       const requested = pendingJoin.color;
       const assigned = await game.joinGame(
@@ -316,7 +348,7 @@ async function onHintsAccept() {
     }
   } catch (err) {
     if (hintFlowMode === 'create') {
-      toast(`Could not create game: ${err.message}`, 'error');
+      toast(`Could not save your hints: ${escapeHtml(err.message)}`, 'error');
     } else {
       // Name clash or full game → send them back to step 2; their hints are kept.
       const fresh = await game.lookupGame(pendingJoin.code).catch(() => null);
@@ -345,7 +377,7 @@ function attachGame(code) {
   localStorage.setItem('retro_code', code);
   $('hints-textarea').value = '';
 
-  for (const key of ['meta', 'players', 'rooms', 'cluesFound', 'votes']) {
+  for (const key of ['meta', 'players', 'rooms', 'cluesFound', 'votes', 'groupVotes']) {
     const unsub = onValue(ref(db, `games/${code}/${key}`), (snap) => onData(key, snap.val()));
     state.unsubscribers.push(unsub);
   }
@@ -354,6 +386,8 @@ function attachGame(code) {
 
 function detachGame() {
   voting.resetPhaseLocals();
+  game.stopGameTicker();
+  hostHintsActive = false;
   resetGameState();
 }
 
@@ -418,6 +452,19 @@ function onPhaseChange(oldPhase, newPhase) {
 
   if (newPhase === 'voting') voting.startVoteTicker();
   else voting.stopVoteTicker();
+
+  if (newPhase === 'gameplay') game.startGameTicker();
+  else game.stopGameTicker();
+}
+
+// The host's own hints are written in the joining phase, alongside the crew arriving.
+function showHostHints() {
+  if (!hostHintsActive) {
+    hostHintsActive = true;
+    enterHintFlow({ mode: 'create', min: state.meta.minHints });
+  }
+  showScreen('hints');
+  game.renderHintsCrew();
 }
 
 function render() {
@@ -426,6 +473,8 @@ function render() {
   if (state.meta.phase !== 'gameplay') hideMusicPlayer();
   switch (state.meta.phase) {
     case 'joining':
+      if (!state.players) break;
+      if (me()?.hintsPending) { showHostHints(); break; }
       showScreen('lobby');
       game.renderLobby();
       break;
@@ -501,7 +550,7 @@ function wireButtons() {
     showScreen('join');
   };
 
-  $('btn-copy-code').onclick = async () => {
+  const copyCode = async () => {
     sfx.click();
     try {
       await navigator.clipboard.writeText(state.code);
@@ -510,6 +559,8 @@ function wireButtons() {
       toast('Could not copy — copy it manually.', 'warn');
     }
   };
+  $('btn-copy-code').onclick = copyCode;
+  $('btn-copy-code-hints').onclick = copyCode;
 
   $('btn-start-game').onclick = async () => {
     sfx.click();

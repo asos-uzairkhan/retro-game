@@ -9,6 +9,7 @@ export const state = {
   rooms: null,
   cluesFound: null,
   votes: null,
+  groupVotes: null,
   // secrets, fetched lazily at the appropriate phase
   hints: null,
   imposterUid: null,
@@ -37,7 +38,7 @@ export function resetGameState() {
   state.unsubscribers = [];
   Object.assign(state, {
     code: null, meta: null, players: null, rooms: null, cluesFound: null,
-    votes: null, hints: null, imposterUid: null,
+    votes: null, groupVotes: null, hints: null, imposterUid: null,
     prevLocation: 'start', answeringRoom: null, joined: false,
   });
 }

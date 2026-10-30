@@ -66,6 +66,7 @@ export const sfx = {
   ping() { [700, 900, 700, 900].forEach((f, i) => tone(f, 0.1, { type: 'square', when: i * 0.1, gain: 0.09 })); },
   phase() { [392, 523, 659, 784].forEach((f, i) => tone(f, 0.22, { type: 'triangle', when: i * 0.11, gain: 0.13 })); },
   tick() { tone(1050, 0.05, { type: 'square', gain: 0.05 }); },
+  timeUp() { [880, 880, 660].forEach((f, i) => tone(f, 0.22, { type: 'square', when: i * 0.26, gain: 0.1 })); },
   vote() { tone(520, 0.1, { slideTo: 780, gain: 0.11 }); tone(780, 0.12, { when: 0.1, gain: 0.1 }); },
   countdown() { tone(880, 0.12, { type: 'square', gain: 0.09 }); },
   reveal() {
@@ -74,6 +75,22 @@ export const sfx = {
   },
   win() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.28, { type: 'triangle', when: i * 0.12, gain: 0.14 })); },
   lose() { [392, 330, 262, 196].forEach((f, i) => tone(f, 0.34, { type: 'sawtooth', when: i * 0.2, gain: 0.09 })); },
+  typeTick() { tone(1300 + Math.random() * 300, 0.025, { type: 'square', gain: 0.03 }); },
+  siren() { [0, 0.5, 1, 1.5].forEach((w) => tone(520, 0.45, { type: 'sawtooth', gain: 0.06, when: w, slideTo: 900 })); },
+  airlock() {
+    noise(0.6, { gain: 0.14 });
+    tone(70, 0.6, { gain: 0.22, slideTo: 40 });
+    tone(55, 0.8, { type: 'square', gain: 0.07, when: 0.15 });
+  },
+  suck() {
+    noise(1.6, { gain: 0.13 });
+    tone(320, 1.8, { type: 'sawtooth', gain: 0.05, slideTo: 40 });
+  },
+  boom() {
+    noise(1, { gain: 0.22 });
+    tone(120, 1, { gain: 0.28, slideTo: 28 });
+  },
+  evil() { [330, 311, 294, 277].forEach((f, i) => tone(f, 0.3, { type: 'sawtooth', when: i * 0.22, gain: 0.08 })); },
 };
 
 export function toggleMute() {

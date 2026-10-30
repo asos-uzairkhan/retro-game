@@ -940,3 +940,272 @@ select.reflect-move {
   .sidebar { width: 100%; }
   .side-players { flex-direction: row; flex-wrap: wrap; gap: 12px; }
 }
+
+/* ===== Hints screen: host invite panel ===== */
+.hints-invite { text-align: center; margin-bottom: 18px; padding-bottom: 8px; border-bottom: 2px solid var(--line); }
+.hints-invite .lobby-players { margin: 12px auto 8px; }
+
+/* ===== Gameplay timer ===== */
+.hud-timer { color: var(--accent-2); font-variant-numeric: tabular-nums; }
+.hud-timer.hud-timer-low { color: var(--danger); border-color: var(--danger); animation: timer-pulse 1s ease-in-out infinite; }
+@keyframes timer-pulse { 50% { box-shadow: 0 0 14px rgba(255, 92, 92, .7); } }
+.banner-warn { background: rgba(245, 245, 87, .12); border: 2px solid var(--accent-2); color: var(--accent-2); }
+.timer-up-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; margin-top: 8px; }
+
+/* ===== Reflection dot-voting ===== */
+.reflect-priorities:not(:empty) {
+  background: var(--panel-2);
+  border: 2px solid var(--line);
+  border-radius: 14px;
+  padding: 14px 18px;
+  margin-top: 14px;
+}
+.prio-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.prio-help { margin: 6px 0 10px; font-size: .85rem; }
+.prio-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.prio-item { display: flex; align-items: center; gap: 10px; }
+.prio-rank {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #05131a;
+  font-weight: 800;
+  font-size: .8rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.prio-item:first-child .prio-rank { background: var(--accent-2); }
+.prio-title { font-weight: 700; min-width: 0; flex: 0 1 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prio-bar { flex: 1; height: 10px; background: var(--panel); border-radius: 999px; overflow: hidden; }
+.prio-bar i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); transition: width .3s; }
+.prio-count { font-weight: 800; min-width: 28px; text-align: right; color: var(--accent-2); }
+#summary-content .prio-item { background: var(--panel-2); border: 2px solid var(--line); border-radius: 12px; padding: 8px 12px; }
+#summary-content .prio-title { flex: 1; }
+
+.reflect-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  border-bottom: 2px solid var(--line);
+  margin-bottom: 10px;
+  padding-bottom: 6px;
+}
+.reflect-group-head h3 { margin: 0; border: 0; padding: 0; }
+.group-vote { display: flex; align-items: center; }
+.gv-toggle { font-weight: 800; color: var(--muted); }
+.gv-toggle.mine { background: var(--accent-2); border-color: var(--accent-2); color: #05131a; box-shadow: 0 0 12px rgba(245, 245, 87, .5); }
+
+/* ===== Ejection cinematic ===== */
+.eject-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: #02030a;
+  overflow: hidden;
+  animation: eject-in .5s ease-out;
+}
+.eject-overlay.closing { opacity: 0; transition: opacity .35s; }
+@keyframes eject-in { from { opacity: 0; } }
+.eject-canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.eject-world { position: absolute; inset: 0; }
+.eject-world.shake { animation: eject-shake .09s linear infinite; }
+@keyframes eject-shake {
+  0% { transform: translate(5px, -4px); }
+  25% { transform: translate(-6px, 3px); }
+  50% { transform: translate(4px, 5px); }
+  75% { transform: translate(-3px, -5px); }
+  100% { transform: translate(5px, -4px); }
+}
+
+.eject-bay {
+  position: absolute;
+  left: 50%;
+  top: 40%;
+  width: min(46vmin, 420px);
+  height: min(58vmin, 520px);
+  transform: translate(-50%, -50%);
+  border: 10px solid #f5f557;
+  border-image: repeating-linear-gradient(45deg, #f5f557 0 14px, #14171f 14px 28px) 10;
+  /* The giant shadow is the ship's wall; the bay itself is a window onto space. */
+  box-shadow: 0 0 0 12px #26335c, 0 0 0 100vmax #0f1730, inset 0 0 40px rgba(0, 0, 0, .8);
+  transition: box-shadow .6s;
+}
+.eject-bay.open { box-shadow: 0 0 0 12px #26335c, 0 0 0 100vmax #0f1730, inset 0 0 90px rgba(120, 180, 255, .45); }
+.eject-sign {
+  position: absolute;
+  left: 50%;
+  top: -52px;
+  transform: translateX(-50%);
+  padding: 4px 18px;
+  background: #14171f;
+  border: 2px solid #f5f557;
+  color: #f5f557;
+  font-weight: 800;
+  letter-spacing: .4em;
+  font-size: clamp(.7rem, 2vmin, 1rem);
+  white-space: nowrap;
+}
+.eject-door {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  background:
+    repeating-linear-gradient(0deg, transparent 0 46px, rgba(0, 0, 0, .35) 46px 50px),
+    linear-gradient(90deg, #4a5578, #7f8bb0 45%, #4a5578);
+  box-shadow: inset 0 0 0 4px rgba(0, 0, 0, .35);
+  transition: transform 1.1s cubic-bezier(.7, 0, .3, 1);
+}
+.eject-door-l { left: 0; border-right: 3px solid #14171f; }
+.eject-door-r { right: 0; border-left: 3px solid #14171f; }
+.eject-bay.open .eject-door-l { transform: translateX(-102%); }
+.eject-bay.open .eject-door-r { transform: translateX(102%); }
+
+.eject-beacon {
+  position: absolute;
+  top: -8px;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 35%, #ff9b9b, #ff2b2b 45%, #5a0808);
+  box-shadow: 0 0 20px 4px rgba(255, 43, 43, .5);
+  opacity: .35;
+}
+.eject-beacon-l { left: -86px; }
+.eject-beacon-r { right: -86px; }
+.eject-beacon::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 260px;
+  height: 260px;
+  margin: -130px 0 0 -130px;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, rgba(255, 60, 60, .55), transparent 18%, transparent 100%);
+  opacity: 0;
+}
+.eject-overlay.alert .eject-beacon { opacity: 1; }
+.eject-overlay.alert .eject-beacon::after { opacity: 1; animation: eject-spin 1.1s linear infinite; }
+@keyframes eject-spin { to { transform: rotate(360deg); } }
+
+.eject-vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 40%, transparent 32%, rgba(0, 0, 0, .7) 100%);
+}
+.eject-redalert { position: absolute; inset: 0; pointer-events: none; opacity: 0; background: radial-gradient(ellipse at center, rgba(255, 30, 30, .1), rgba(255, 30, 30, .45)); }
+.eject-overlay.alert .eject-redalert { animation: eject-alert .9s ease-in-out infinite; }
+.eject-overlay.flicker .eject-redalert { animation: eject-flicker .45s steps(2) infinite; }
+@keyframes eject-alert { 0%, 100% { opacity: 0; } 50% { opacity: 1; } }
+@keyframes eject-flicker { 0% { opacity: .2; } 50% { opacity: 1; } 100% { opacity: .4; } }
+
+.eject-actors { position: absolute; inset: 0; pointer-events: none; }
+.eject-actor { position: absolute; animation: eject-actor-in .5s cubic-bezier(.2, 1.6, .4, 1) backwards; }
+@keyframes eject-actor-in { from { transform: translateY(40px) scale(.2); opacity: 0; } }
+.eject-body { width: 100%; height: 100%; display: block; filter: drop-shadow(0 6px 10px rgba(0, 0, 0, .6)); }
+.eject-tag {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 4px;
+  max-width: 110px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, .6);
+  font-size: clamp(.55rem, 1.4vmin, .8rem);
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: opacity .3s;
+}
+.eject-emote {
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  font-size: clamp(1rem, 3vmin, 1.8rem);
+  font-weight: 800;
+  animation: eject-bob 1s ease-in-out infinite;
+}
+@keyframes eject-bob { 50% { transform: translate(-50%, -6px); } }
+.eject-actor.flying .eject-tag, .eject-actor.flying .eject-emote { opacity: 0; }
+.eject-actor.wobble .eject-body { animation: eject-wobble .12s linear infinite; }
+@keyframes eject-wobble {
+  0% { transform: rotate(-4deg); }
+  50% { transform: rotate(4deg); }
+  100% { transform: rotate(-4deg); }
+}
+.eject-actor.gloating .eject-body { animation: eject-gloat .35s ease-in-out infinite; }
+.eject-actor.gloating .eject-emote { color: var(--danger); text-shadow: 0 0 14px rgba(255, 60, 60, .8); }
+@keyframes eject-gloat { 50% { transform: translateY(-8px) rotate(5deg); } }
+
+.eject-ring {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border-radius: 50%;
+  border: 4px solid rgba(255, 255, 255, .9);
+  pointer-events: none;
+  animation: eject-ring 1.2s ease-out forwards;
+}
+@keyframes eject-ring { to { transform: scale(14); opacity: 0; border-width: 1px; } }
+
+.eject-caption { position: absolute; left: 0; right: 0; bottom: 6vh; text-align: center; padding: 0 16px; pointer-events: none; }
+.eject-caption p { margin: 0; min-height: 1.3em; font-weight: 800; text-shadow: 0 2px 14px #000; }
+.eject-line1 { font-size: clamp(1.2rem, 4.6vmin, 2.6rem); color: #fff; }
+.eject-line2 { font-size: clamp(1rem, 3.4vmin, 1.9rem); color: var(--accent-2); margin-top: 6px; }
+
+.eject-skip {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 3;
+  background: rgba(0, 0, 0, .55);
+  border: 2px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  font-family: inherit;
+  font-weight: 700;
+  padding: 6px 14px;
+  cursor: pointer;
+}
+.eject-skip:hover { border-color: var(--accent); }
+
+.eject-end {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 24px;
+  text-align: center;
+  background: radial-gradient(ellipse at center, rgba(2, 3, 10, .75), rgba(2, 3, 10, .92));
+  animation: eject-in .6s ease-out;
+}
+.eject-end p { margin: 0; max-width: 520px; color: var(--muted); font-size: 1.05rem; }
+.eject-end-title {
+  font-size: clamp(2.2rem, 9vw, 5rem);
+  font-weight: 800;
+  letter-spacing: .08em;
+  animation: imposter-in .7s ease-out;
+}
+.eject-end-title.win { color: var(--ok); text-shadow: 0 0 40px rgba(80, 239, 57, .7); }
+.eject-end-title.lose { color: var(--danger); text-shadow: 0 0 40px rgba(255, 92, 92, .7); }
+
+@media (prefers-reduced-motion: reduce) {
+  .eject-world.shake, .eject-overlay.alert .eject-redalert { animation: none; }
+}

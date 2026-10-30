@@ -37,6 +37,12 @@
           },
           "phaseStartedAt": {
             ".write": "auth != null"
+          },
+          "gameplayTimerMin": {
+            ".validate": "newData.isNumber() && (newData.val() === -1 || (newData.val() >= 1 && newData.val() <= 240))"
+          },
+          "gameplayExtraSec": {
+            ".validate": "newData.isNumber() && newData.val() >= 0 && newData.val() <= 86400"
           }
         },
 
@@ -56,6 +62,9 @@
               }
             },
             "optedOut": {
+              ".validate": "newData.isBoolean()"
+            },
+            "hintsPending": {
               ".validate": "newData.isBoolean()"
             }
           }
@@ -112,6 +121,15 @@
           "$uid": {
             ".write": "auth != null && $uid === auth.uid && !data.exists() && root.child('games/' + $code + '/meta/phase').val() === 'voting'",
             ".validate": "newData.isString()"
+          }
+        },
+
+        "groupVotes": {
+          "$uid": {
+            ".write": "auth != null && $uid === auth.uid && root.child('games/' + $code + '/meta/phase').val() === 'reflection'",
+            "$key": {
+              ".validate": "$key.length <= 30 && newData.val() === true"
+            }
           }
         }
       }
